@@ -1,0 +1,26 @@
+# Override for E2E testing
+# Use with: docker compose -f docker-compose.yml -f docker-compose.test.yml up
+
+services:
+  # Use test database
+  postgres:
+    environment:
+      POSTGRES_DB: stackpoint_test
+
+  # Enable controlled failures for testing
+  worker-text-extractor:
+    environment:
+      ENABLE_CONTROLLED_FAILURES: "true"
+
+  worker-pdf-fallback:
+    environment:
+      ENABLE_CONTROLLED_FAILURES: "true"
+
+  worker-persistence:
+    environment:
+      ENABLE_CONTROLLED_FAILURES: "true"
+      DATABASE_URL: postgresql://stackpoint_user:stackpoint_pass@postgres:5432/stackpoint_test
+
+  query-api:
+    environment:
+      DATABASE_URL: postgresql://stackpoint_user:stackpoint_pass@postgres:5432/stackpoint_test

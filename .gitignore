@@ -1,3 +1,41 @@
 # Excluded folders
 backup/
 other-*/
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+*.js.map
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+
+# IDE / AI assistant local config
+.vscode/
+.idea/
+.claude/
+.cursor/
+.codex/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Object store (local dev)
+object-store/
+
+# Test outputs
+coverage/
+.nyc_output/
+
+# Prometheus/Grafana data
+prometheus_data/
+grafana_data/

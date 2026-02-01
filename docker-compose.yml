@@ -1,0 +1,194 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: stackpoint
+      POSTGRES_USER: stackpoint_user
+      POSTGRES_PASSWORD: stackpoint_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - stackpoint-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stackpoint_user -d stackpoint"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Redis (for BullMQ queue) with AOF persistence
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - stackpoint-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Fixture Source - Mock external document API
+  fixture-source:
+    build:
+      context: ./services/fixture-source
+      dockerfile: Dockerfile
+    ports:
+      - "9000:9000"
+    environment:
+      PORT: 9000
+      DATA_PATH: /data
+    volumes:
+      - ./data:/data:ro
+    networks:
+      - stackpoint-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9000/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Adapter API - POST /sync endpoint
+  adapter-api:
+    build:
+      context: .
+      dockerfile: services/adapter-api/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      REDIS_URL: redis://redis:6379
+      FIXTURE_SOURCE_URL: http://fixture-source:9000
+      OBJECT_STORE_PATH: /object-store
+    volumes:
+      - object_store:/object-store
+    networks:
+      - stackpoint-network
+    depends_on:
+      redis:
+        condition: service_healthy
+      fixture-source:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Query API - GET /borrowers, /applications endpoints
+  query-api:
+    build:
+      context: .
+      dockerfile: services/query-api/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      PORT: 8081
+      DATABASE_URL: postgresql://stackpoint_user:stackpoint_pass@postgres:5432/stackpoint
+    networks:
+      - stackpoint-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8081/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Worker: Ingestion - Consumes document_available queue
+  worker-ingestion:
+    build:
+      context: .
+      dockerfile: services/worker-ingestion/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      OBJECT_STORE_PATH: /object-store
+    volumes:
+      - object_store:/object-store:ro
+    networks:
+      - stackpoint-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Worker: Text Extractor - Text-first LLM extraction
+  worker-text-extractor:
+    build:
+      context: .
+      dockerfile: services/worker-text-extractor/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      OBJECT_STORE_PATH: /object-store
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LLM_MODEL_TEXT: gpt-4o-mini
+    volumes:
+      - object_store:/object-store:ro
+    networks:
+      - stackpoint-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  # Worker: PDF Fallback - Vision API fallback
+  worker-pdf-fallback:
+    build:
+      context: .
+      dockerfile: services/worker-pdf-fallback/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      OBJECT_STORE_PATH: /object-store
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LLM_MODEL_PDF: gpt-4o
+    volumes:
+      - object_store:/object-store:ro
+    networks:
+      - stackpoint-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Worker: Persistence - Upserts to Postgres
+  worker-persistence:
+    build:
+      context: .
+      dockerfile: services/worker-persistence/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://stackpoint_user:stackpoint_pass@postgres:5432/stackpoint
+    networks:
+      - stackpoint-network
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  object_store:
+    driver: local
+
+networks:
+  stackpoint-network:
+    driver: bridge

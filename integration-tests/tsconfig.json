@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./",
+    "paths": {
+      "@stackpoint/shared": ["../packages/shared/src"]
+    }
+  },
+  "include": ["tests/**/*", "src/**/*"]
+}

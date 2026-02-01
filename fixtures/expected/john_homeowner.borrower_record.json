@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "borrower_id": "11111111-1111-1111-1111-111111111111",
   "borrower_key": "9f2cf529d2c6cf4b924fcb1755bc62d7ebd8ea147fece0165ac96bf883197d72",
   "status": "COMPLETE",
@@ -105,6 +105,21 @@
           "source_filename": "Closing_Disclosure.pdf",
           "page_number": 1,
           "quote": "gage Company Loan Information Loan Term: 30 years Purpose: Purchase Product: Fixed Rate Loan Type: Conventional Loan ID #: TEST250700110 MIC #: 9876543210 Loan Terms Description Amount Can this amount increase after closing? Loan Amo"
+        }
+      ]
+    }
+  ],
+  "applications": [
+    {
+      "application_id": "22222222-2222-2222-2222-222222222222",
+      "loan_number": "TEST250700110",
+      "role": "borrower",
+      "evidence": [
+        {
+          "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
+          "source_filename": "Closing_Disclosure.pdf",
+          "page_number": 1,
+          "quote": "Transaction Information Borrower: John Homeowner and Mary Homeowner"
         }
       ]
     }
