@@ -718,7 +718,7 @@ Run via `make test-e2e` (asserts against `fixtures/expected/*.json`, normalized 
 The load test validates that the pipeline remains stable under burst sync requests and that backpressure, retries, and worker concurrency controls behave as designed.
 
 **Mechanics**
-- A small fixture corpus (e.g., 5–10 PDFs) is served by the **Fixture Source Service** (External Source API).
+- A small fixture corpus (e.g., 5–10 PDFs) is served by the **Fixture Source Service** (External Source API). Fixture Source serves PDFs from `/data` (mounted read-only from `./data/`).
 - The k6 load generator repeatedly calls `POST /sync` on the **Adapter API** using the request shape defined in `docs/api.md`.
 - The Adapter pulls (list + download), stores raw PDFs under `document_id` (content hash), and enqueues downstream work. Replays reuse the same object-store path while each sync request receives a fresh `correlation_id`.
 

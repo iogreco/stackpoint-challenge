@@ -171,6 +171,8 @@ This endpoint is the primary way to retrieve a record when the user has a loan n
 
 This is the minimal external API shape the Adapter integrates with in the demo.
 
+*Implementation note (demo):* reads PDFs from `/data`.
+
 Base URL (docker-compose): `http://fixture-source:9000`
 
 ## `GET /documents`
