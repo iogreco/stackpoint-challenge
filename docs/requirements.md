@@ -21,14 +21,31 @@ Given a corpus of loan-related PDFs, the system MUST:
 - A single loan/application may include **multiple parties** (e.g., borrower + co-borrower).
 - The system MUST represent this via an **ApplicationRecord** with `parties[]` and links back to individual **BorrowerRecords**.
 
+### Integration model
+- The **Adapter Service** is the only component that **pulls** from external systems.
+- Everything downstream is **push/event-driven** via queues.
+
 ---
 
 ## Must-have requirements
 
-### Ingestion + processing
-- Accept ingestion requests via the Ingest API:
-  - `POST /ingest` with `source_system`, `source_url`, `source_filename`
-- Fetch the PDF through an adapter, store it in the object store (local filesystem in demo).
+### Adapter sync (pull)
+- Provide an Adapter API endpoint:
+  - `POST /sync`
+- `POST /sync` MUST:
+  1) call the external system to **list** new/changed documents
+  2) **download** each document
+  3) store the raw PDF into the object store (demo: shared filesystem volume)
+  4) emit a `document.available` work item for downstream processing containing at least:
+     - `correlation_id`
+     - `document_id` (stable hash of PDF bytes)
+     - `raw_uri`
+     - `source_system`
+     - `source_doc_id`
+     - `source_filename`
+
+### Ingestion + processing (push)
+- Downstream workers MUST be queue-driven (no public HTTP surface required).
 - Compute a stable `document_id` from PDF bytes (sha256 hex recommended).
 - Run **text-first extraction**; if incomplete, run **PDF fallback extraction**.
 - Produce an ExtractionResult that conforms to:
@@ -71,10 +88,11 @@ Persisted read models MUST also include evidence on:
   - populate `missing_fields` in ExtractionResult and per-entity missing fields
 
 ### Observability
-- Both APIs and workers MUST expose Prometheus metrics at `GET /metrics`.
+- Adapter API and Query API MUST expose Prometheus metrics at `GET /metrics`.
+- Worker processes MUST expose Prometheus metrics at `GET /metrics` (separate port is acceptable).
 - The system MUST propagate `correlation_id` through queues and logs.
 - Minimal required metrics (the ones the load test will chart):
-  - ingestion requests per second
+  - adapter sync runs per second (or per minute)
   - queue depth (per stage)
   - extraction latency (p50/p95) per stage
   - Query API latency (p50/p95)
@@ -107,7 +125,8 @@ Persisted read models MUST also include evidence on:
 
 The submission is complete if:
 
-- [ ] `POST /ingest` stores a PDF and enqueues processing
+- [ ] `POST /sync` pulls from external system (list + download) and enqueues `document.available`
+- [ ] Adapter stores PDFs in the object store and emits work items with `document_id` and `raw_uri`
 - [ ] Extraction runs text-first and optionally PDF fallback
 - [ ] Extraction output validates against `extraction_result.schema.json`
 - [ ] Borrower and application read models are persisted in Postgres

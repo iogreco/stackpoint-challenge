@@ -11,7 +11,7 @@ docker compose up -d
 ```
 
 Local ports:
-- Ingest API: `http://localhost:8080`
+- Adapter API: `http://localhost:8080`
 - Query API: `http://localhost:8081`
 - Postgres: `localhost:5432`
 - Redis: `localhost:6379`
@@ -33,7 +33,7 @@ make obs-load
 make obs-cleanup
 ```
 
-The load test targets **ingestion** and uses a small set of fixture PDFs repeatedly (no disk growth beyond a bounded object-store directory; see §6.3).
+The load test targets **adapter sync** and uses a small set of fixture PDFs repeatedly (no disk growth beyond a bounded object-store directory; see §6.3).
 
 ---
 
@@ -78,6 +78,9 @@ Given a corpus of heterogeneous **loan documents** (PDFs with varying formats), 
 - Full KYC-grade address normalization (this implementation uses zip-based simplification; production uses a full address normalization service).
 - Sophisticated human-in-the-loop review tooling (we provide hooks / flags).
 
+---
+
+
 ### 1.4 Technical stack
 
 | Layer | Technology |
@@ -89,123 +92,155 @@ Given a corpus of heterogeneous **loan documents** (PDFs with varying formats), 
 | **Orchestration** | Docker Compose |
 | **Database** | PostgreSQL 15 |
 | **Queue** | Redis 7 + BullMQ |
-| **Object storage** | Local filesystem (object-store/); production: S3/GCS |
+| **Object storage** | Local filesystem (`object-store/`); production: S3/GCS |
 | **Observability** | Prometheus, Grafana, k6 |
 | **Build / tests** | Makefile, Jest |
 
-All application services (Ingest API, Query API, workers) are Node.js/TypeScript processes, each with a Dockerfile and `package.json`. The system runs via `docker compose up -d`; E2E and load tests use isolated compose stacks as described in §0.
+All application services (Adapter API, Query API, workers) are Node.js/TypeScript processes, each with a Dockerfile and `package.json`. The system runs via `docker compose up -d`; E2E and load tests use isolated compose stacks as described in §0.
 
----
 
 ## 2. Architecture overview
 
 ### 2.1 Components
 
-**Ingest API**
-- Accepts incoming PDFs via HTTP upload or by reference via `source_url` through a Source Adapter.
-- Generates a **`correlation_id`** per ingestion attempt for end-to-end traceability.
+**Adapter API (pull integration boundary)**
+- Exposes `POST /sync` to trigger a sync pass against an external system.
+- Integrates with external systems via an Adapter implementation (HTTP list + download in this demo).
+- Generates a **`correlation_id`** per sync request for end-to-end traceability.
 - Computes a stable **`document_id`** (content hash) for dedupe and idempotent storage.
-- Stores the raw PDF in the object store abstraction (local filesystem object store).
-- Enqueues an `extract_text` job to begin asynchronous processing.
+- Stores raw PDFs in the object store abstraction (local filesystem object store).
+- Enqueues `document_available` work items to begin asynchronous processing.
 
-**Source Adapter(s) (integration boundary)**
-- Encapsulate “how to fetch documents” from a source system into a small, swappable module.
-- Extensibility for this project is achieved by adding a new adapter (e.g., folder drop, HTTP listing service, vendor portal export).
-- For local validation and load testing, a **Fixture Source Service** can serve a rotating set of sample PDFs without requiring the load generator to manage large files.
+**External Source API (mock fixture source)**
+- Represents a source system with two endpoints: list available documents and download document bytes.
+- Used for local validation and load testing to replay a small fixture corpus without the load generator managing large files.
+
+**Ingestion Worker**
+- Consumes `document_available` jobs.
+- Validates the stored PDF reference, registers minimal metadata, and emits `extract_text`.
 
 **Text Extractor Worker (text-first)**
 - Consumes `extract_text` jobs.
 - Extracts page-bounded plain text from the PDF.
 - Calls the LLM with **text-only** input under a schema-constrained contract.
-- Validates completeness. If required fields are missing, enqueues `extract_pdf` for fallback; otherwise emits `persist_borrower`.
+- Validates completeness. If required fields are missing, enqueues `extract_pdf` for fallback; otherwise emits `persist_records`.
 
 **PDF Fallback Extractor Worker (multimodal)**
 - Consumes `extract_pdf` jobs.
 - Calls the LLM with the **full PDF** to leverage layout/vision understanding when text-only is insufficient.
-- Produces a best-effort extraction (complete or partial) and emits `persist_borrower`.
+- Produces a best-effort extraction (complete or partial) and emits `persist_records`.
 
-**Persistence Worker (upsert + provenance)**
-- Consumes `persist_borrower` jobs.
-- Validates the extracted payload and required-field flags.
-- Upserts **Borrower** entities (one per `borrower_key`) and, when a loan number is present, upserts an **Application** entity and links **parties** with roles (borrower/co-borrower).
-- Writes structured data plus document provenance to Postgres using idempotent upsert patterns.
+**Persistence Worker**
+- Consumes `persist_records` jobs.
+- Upserts **BorrowerRecord** and **ApplicationRecord** read models into Postgres.
+- Persists provenance (page-level `evidence`) and completeness status (`COMPLETE` / `PARTIAL`).
 
-**Query API (read service)**
-- Serves low-latency retrieval for **BorrowerRecords** (individuals) and **ApplicationRecords** (loan party-groups keyed by loan number).
-- Runs separately from the ingestion workers so read latency is not impacted by ingest bursts.
-- Uses a separate DB connection pool and can scale independently.
+**Query API**
+- Serves borrower/application read models from Postgres with low latency.
+- Isolated from ingestion/extraction load (separate process, separate scaling profile).
 
-**Postgres (system of record)**
-- Stores borrower entities, structured extracted data, and provenance references to source documents.
+**Postgres**
+- System of record for read models.
 
-**Redis + BullMQ (queueing)**
-- Redis-backed queues provide asynchronous stage isolation, retries with backoff, and DLQ routing.
-- Separate queues/pools isolate different resource profiles (`extract_text` vs `extract_pdf` vs `persist_borrower`).
+**Redis/BullMQ**
+- Durable stage queues (`document_available`, `extract_text`, `extract_pdf`, `persist_records`) and backpressure.
 
-**Object Store (local filesystem)**
-- `./object-store/` simulates S3/GCS.
-- Stores immutable raw PDFs keyed by `document_id` (content hash) to bound disk growth under repeated ingestion.
+**Prometheus/Grafana**
+- Minimal observability stack for metrics and load-test validation.
 
 ### 2.2 Component diagram
 
-```mermaid
-flowchart LR
-  subgraph Ingestion
-    Client[Client / LoadGen]
-    Ingest[Ingest API]
-    Q1[(Redis Queue\nextract_text)]
-    TextW[Text Extractor Worker]
-    Q2[(Redis Queue\nextract_pdf)]
-    PdfW[PDF Fallback Extractor Worker]
-    Q3[(Redis Queue\npersist_borrower)]
-    Persist[Persistence Worker]
-  end
-
-  subgraph Storage
-    FS[(Object Store\nlocal FS)]
-    PG[(Postgres)]
-  end
-
-  subgraph Retrieval
-    Query[Query API]
-  end
-
-  subgraph External
-    LLM["LLM Provider (text) + (PDF/vision)"]
-  end
-
-  Client -->|POST /ingest| Ingest
-  Ingest -->|store raw pdf| FS
-  Ingest -->|enqueue| Q1
-  Q1 --> TextW
-  TextW -->|LLM text| LLM
-  TextW -->|complete? yes| Q3
-  TextW -->|complete? no| Q2
-  Q2 --> PdfW
-  PdfW -->|LLM PDF| LLM
-  PdfW --> Q3
-  Q3 --> Persist
-  Persist --> PG
-  Query --> PG
-  Client -->|GET /borrowers or /applications/by-loan| Query
+```text
+                             ┌───────────────────────────────┐
+                             │ External Source System (mock) │
+                             │ - GET /documents (list)       │
+                             │ - GET /documents/{id} (bytes) │
+                             └───────────────┬───────────────┘
+                                             │ (pull: list + download)
+                                             ▼
+┌───────────────────┐          ┌──────────────────────────┐          ┌───────────────────────────┐
+│ Clients / LoadGen │─────────►│ Adapter API              │─────────►│ Ingestion Worker          │
+│ (triggers sync)   │  POST    │ - POST /sync             │  emits   │ - validates raw_uri       │
+└───────────────────┘  /sync   │ - store raw PDFs         │  work    │ - emits extract_text      │
+                               │ - emit document_available│  items   └─────────────┬─────────────┘
+                               └─────────────┬────────────┘                        │
+                                             │                                     │
+                                             │                                     ▼
+                                             │                       ┌───────────────────────────┐
+                                             │                       │ Extraction Workers        │
+                                             │                       │ - text-first              │
+                                             │                       │ - PDF fallback (if needed)│
+                                             │                       └────────────┬──────────────┘
+                                             │                                    │
+                                             │                                    ▼
+                                             │                       ┌───────────────────────────┐
+                                             │                       │ LLM Provider              │
+                                             │                       │ - schema extraction       │
+                                             │                       └───────────────────────────┘
+                                             │
+                                             ▼
+                               ┌──────────────────────────┐
+                               │ Persistence Worker       │
+                               │ - upsert read models     │
+                               │ - attach provenance      │
+                               └─────────────┬────────────┘
+                                             │
+                                             ▼
+                               ┌──────────────────────────┐
+                               │ Postgres                 │
+                               │ - borrowers              │
+                               │ - applications           │
+                               └─────────────┬────────────┘
+                                             ▲
+                                             │
+                               ┌─────────────┴────────────┐
+                               │ Query API                │
+                               │ - search borrowers       │
+                               │ - get by loan_number     │
+                               └─────────────┬────────────┘
+                                             ▲
+                                             │
+                                        ┌────┴────┐
+                                        │ Clients │
+                                        └─────────┘
 ```
 
----
+### 2.3 Runtime view
+
+In the reference implementation, service boundaries are connected via durable queues and a simple object store:
+
+- **BullMQ** provides stage queues (`document_available`, `extract_text`, `extract_pdf`, `persist_records`) and backpressure; **Redis** is the durable backing store.
+- A local **object store directory** holds raw PDFs keyed by `document_id` (content hash). The Adapter writes to this store; downstream workers read from it.
+- **Postgres** stores the read models served by the Query API.
+- The Query API is isolated from ingestion/extraction load (separate process, separate scaling profile).
+
+The Adapter is the only component that performs **pull** integrations. Downstream processing is **push/event-driven**: each worker consumes from a queue, performs a deterministic unit of work, and emits the next message.
 
 ## 3. Data pipeline design
 
-### 3.1 Ingestion
+### 3.1 Adapter pull and document availability
 
-**Input options**
-- `POST /ingest` (multipart file upload)
-- `POST /ingest` (JSON body with `source_url` pointing to a Fixture Source Service (or any external system via a Source Adapter))
+**Entry point**
+- `POST /sync` on the **Adapter API** (see `docs/api.md`)
+
+**External integration (HTTP in this demo)**
+- `GET /documents?since_cursor=...` (list)
+- `GET /documents/{source_doc_id}` (download PDF bytes)
 
 **Steps**
-1. Validate request and generate a **correlation_id** (ULID/UUID) for end-to-end tracing.
-2. Compute `document_id = sha256(pdf_bytes)` (content-addressed).
-3. Store file to object store at `object-store/{document_id}.pdf` (idempotent overwrite).
-4. Enqueue `extract_text` job payload:
-   - `correlation_id`, `document_id`, `object_uri`, `original_filename`, basic metadata.
+1. Receive `POST /sync` and generate a **correlation_id** (ULID/UUID) for end-to-end tracing.
+2. Call the external system to list documents (bounded by `max_documents`).
+3. For each listed document:
+   - download PDF bytes,
+   - compute `document_id = sha256(pdf_bytes)` (content-addressed),
+   - store to object store at `object-store/raw/{source_system}/{document_id}.pdf` (idempotent overwrite),
+   - enqueue a `document_available` message:
+     - `correlation_id`, `document_id`, `raw_uri`, `source_system`, `source_doc_id`, `source_filename`, `discovered_at`.
+4. Return `202 Accepted` with `correlation_id` immediately after scheduling/enqueuing.
+
+**Notes**
+- The Adapter is the only component that **pulls** from external systems. Everything downstream is **push/event-driven** via queues.
+- Replays do not grow disk: the object-store path is deterministic by `document_id`, so repeated syncs overwrite/reuse the same file.
 
 ### 3.2 Stage 1: Text-first extraction (Text Extractor Worker)
 
@@ -423,7 +458,7 @@ This is sufficient to satisfy the requirement “clear reference to the original
 
 ### 5.3 Cost-awareness (without implementing hard bounds)
 
-The pipeline defaults to text-only extraction and escalates to PDF+vision only when required fields are missing. Hard caps (max pages, max size) are not implemented here; they are applied at the Ingest API and extractor boundaries in production.
+The pipeline defaults to text-only extraction and escalates to PDF+vision only when required fields are missing. Hard caps (max pages, max size) are not implemented here; they are applied at the Adapter API and extractor boundaries in production.
 
 ---
 
@@ -453,71 +488,76 @@ Because raw PDFs are stored content-addressed (`document_id = sha256(bytes)`), r
 
 ## 7. Orchestration & resilience patterns
 
-### 7.1 Queues and worker concurrency
+This system is internally **event-driven**. The Adapter emits work items, and downstream workers coordinate via stage queues. Resilience behavior is controlled by environment variables (see **Appendix B**) and validated via controlled failure tests (see **§12.4** and **Appendix C**).
 
-- BullMQ queues: `extract_text`, `extract_pdf`, `persist_borrower`
-- Each worker type has configurable `WORKER_CONCURRENCY`.
-- Prefer scaling by increasing worker replicas before raising concurrency in a single process (better isolation, easier CPU/memory shaping).
+### 7.1 Message queue semantics (BullMQ)
 
-### 7.2 Backpressure
+This implementation uses **BullMQ** as the queue/orchestration library backed by **Redis** as the persistence layer.
 
-Backpressure is enforced **at ingestion**:
-- read current queue depth (waiting + active)
-- if above warning threshold → emit metric + log
-- if above reject threshold → return `503` to the client
+BullMQ provides:
+- request buffering between stages
+- natural backpressure via queue depth and worker concurrency
+- retry handling with exponential backoff and jitter
+- dead-lettering / failure isolation via a failed-jobs queue (DLQ pattern)
 
-This prevents memory blowups and protects downstream services (LLM + Postgres).
+**Redis persistence:** BullMQ stores job state in Redis. To ensure durability across container restarts, Redis SHOULD be configured with persistence enabled:
+- **AOF (Append-Only File)** is recommended for stronger durability guarantees, or
+- **RDB snapshotting** as a lighter-weight alternative.
 
-### 7.3 Rate limiting & circuit breaking
+**Ack/Nack behavior:** BullMQ implicitly **acknowledges** a job when the worker function completes successfully. A worker that **throws** (or returns a rejected promise) implicitly **nacks** the job, triggering BullMQ’s retry logic according to the job configuration (attempts, backoff, jitter).
 
-We protect both the system and the LLM provider with explicit controls:
+### 7.2 Stage queues and handoff contracts
 
-1. **API rate limiting (ingest):** token-bucket per client key (e.g., `RATE_LIMIT_RPS` with a small burst allowance).
-2. **Worker-side concurrency limits (LLM):** each extractor worker enforces `LLM_MAX_CONCURRENT_REQUESTS` via a semaphore so that scaling worker replicas does not accidentally exceed provider quotas.
+The pipeline uses dedicated BullMQ queues per stage:
 
-**Circuit breaker (LLM provider)**
-- Track recent provider failures (e.g., consecutive 5xx / timeouts / repeated 429s).
-- When thresholds are exceeded, “open” the breaker for a cool-off window and **pause consumption** from `extract_text` / `extract_pdf` (or re-schedule jobs with a delay).
-- This avoids hot-loop retries and allows backlog to accumulate safely in queues until the provider recovers.
+- `document_available` — emitted by the Adapter after a successful list+download and raw-PDF write
+- `extract_text` — text-first extraction worker
+- `extract_pdf` — PDF fallback extraction worker
+- `persist_records` — upsert borrower/application read models into Postgres
+
+Each job payload MUST include:
+- `correlation_id` (unique per processing attempt)
+- `document_id` (stable content hash; used for dedupe/idempotency)
+- `raw_uri`
+- `source_system`
+- `source_doc_id`
+- `source_filename`
+
+Downstream workers propagate these values into `ExtractionResult.document` for provenance and traceability.
+
+### 7.3 Backpressure and input control
+
+Backpressure is governed by configuration parameters (Appendix B):
+
+- `WORKER_CONCURRENCY_*` controls how many jobs may run simultaneously per stage. Increasing concurrency raises throughput but also increases pressure on dependencies (LLM provider and Postgres).
+- `MAX_QUEUE_DEPTH_WARNING` defines when the system should emit warnings due to backlog growth.
+- `MAX_QUEUE_DEPTH_REJECT` defines when the Adapter should temporarily reject new `POST /sync` requests to prevent unbounded accumulation.
+
+Operationally:
+- queue depth buffers spikes
+- worker concurrency protects downstream dependencies
+- adapter input control protects the system from overload
 
 ### 7.4 Retries, backoff, and DLQ
 
-**Retry policy (examples)**
-- Retryable: network timeouts, provider 429/5xx, transient Postgres errors (connection pool, serialization failures).
-- Non-retryable: corrupted/unreadable PDFs, repeated schema validation failures beyond repair attempts, invalid content type.
+Each stage uses bounded retries with exponential backoff and jitter:
+- transient failures are retried (e.g., timeouts, rate limits, transient DB errors)
+- repeated failures route the job to a DLQ/failed-jobs queue and increment failure metrics
 
-**Backoff**
-- Exponential backoff with jitter, e.g.:
-  - `delay = min(BACKOFF_BASE_MS * 2^attempt, BACKOFF_MAX_MS) + rand(0..BACKOFF_JITTER_MS)`
+### 7.5 External dependency protection
 
-**DLQ**
-- After `MAX_JOB_ATTEMPTS`, jobs are routed to a DLQ queue with a `reason_code` and last error.
-- Operators can inspect DLQ entries and either (a) requeue after fixing configuration/prompt/schema, or (b) mark the document as permanently failed (leaving an audit trail in Postgres).
+- **External source (Adapter):** per-host rate limiting, bounded download concurrency, and (optional) circuit breaker to avoid hammering an unhealthy source.
+- **LLM provider:** global concurrency cap and request timeouts to prevent runaway cost/latency.
+- **Postgres:** bounded connection pool; persistence worker retries on transient errors.
 
-### 7.5 Idempotency and consistency
+### 7.6 Idempotency, ordering, and correlation ID propagation
 
-**Idempotency keys**
-- Ingest: `document_id` (content addressed)
-- Persist: `borrower_key` + stable “income row keys” to avoid duplicates
+- **Correlation ID:** generated per `POST /sync` request and propagated through every job payload. Use `AsyncLocalStorage` to bind `correlation_id` to logs emitted during job execution (so logs remain traceable without manual plumbing in every call site).
+- **Document ID:** derived from bytes (`sha256(pdf_bytes)`) and used for dedupe and safe reprocessing. It is stable across runs and distinct from `correlation_id`.
+- **Idempotent writes:** persistence uses upserts keyed by stable identifiers (e.g., borrower_id + application/loan keys) to make repeated processing safe.
+- **Ordering:** strict ordering is not required for this prototype; if needed, BullMQ can serialize per-key (e.g., per loan_number) using queue partitioning or per-entity locks.
 
-**Exactly-once vs at-least-once**
-- The system is **at-least-once** in the queues; persistence is **idempotent** so the end state is correct under retries.
 
-### 7.6 Correlation ID propagation (AsyncLocalStorage)
-
-We use **two identifiers**:
-
-- `correlation_id` (UUID/ULID): unique per processing attempt; used for log stitching and debugging.
-- `document_id` (sha256): stable identity of the raw PDF bytes; used for dedupe and idempotent storage.
-
-To propagate `correlation_id` reliably across async boundaries (HTTP handlers, BullMQ processors, awaited calls), the Node services use **`AsyncLocalStorage`**:
-
-- **HTTP ingress:** middleware reads `x-correlation-id` (if provided) or generates a new one, then runs the request in an ALS context.
-- **Queue messages:** every job payload includes `correlation_id` and `document_id`.
-- **Workers:** a wrapper runs each job handler inside `als.run({ correlation_id, document_id }, ...)`.
-- **Logging:** the logger enriches every log line with the current ALS context (no need to carry IDs manually through every function signature).
-
-This preserves clear traces even when the **same `document_id` is processed multiple times** (different `correlation_id`s).
 
 ## 8. Error handling and data quality validation
 
@@ -594,7 +634,7 @@ Correlation_id-based log stitching is sufficient. Production systems add OpenTel
 
 The system does not implement a “job status” endpoint. Operational debugging is performed via:
 
-1. **Correlation ID log stitching:** the Ingest API returns (and logs) `correlation_id`; all downstream workers include it automatically via `AsyncLocalStorage`.
+1. **Correlation ID log stitching:** the Adapter API returns (and logs) `correlation_id`; all downstream workers include it automatically via `AsyncLocalStorage`.
 2. **Queue inspection:** BullMQ/Redis exposes job state (`waiting`, `active`, `delayed`, `failed`). Failed jobs ultimately land in the DLQ with a reason code.
 3. **Dashboards:** queue depth, retry counters, stage throughput, and LLM/provider error rates explain whether the system is backlogged, throttled, or failing fast.
 
@@ -657,37 +697,37 @@ Run via `make test-e2e` (asserts against `fixtures/expected/*.json`, normalized 
 
 ### 12.3 Load test design
 
-The load test validates that the pipeline remains stable under burst ingestion and that backpressure, retries, and worker concurrency controls behave as designed.
+The load test validates that the pipeline remains stable under burst sync requests and that backpressure, retries, and worker concurrency controls behave as designed.
 
 **Mechanics**
-- A small fixture corpus (e.g., 5–10 PDFs) is served by the **Fixture Source Service**.
-- The k6 load generator repeatedly calls the **Ingest API** using the request shape defined in `docs/api.md` (including `source_url`) so the same fixtures can be replayed without unbounded disk growth.
-- The Ingest API stores raw PDFs in the object store under `document_id` (content hash). Replays reuse the same object-store path while each request receives a fresh `correlation_id` for traceability.
+- A small fixture corpus (e.g., 5–10 PDFs) is served by the **Fixture Source Service** (External Source API).
+- The k6 load generator repeatedly calls `POST /sync` on the **Adapter API** using the request shape defined in `docs/api.md`.
+- The Adapter pulls (list + download), stores raw PDFs under `document_id` (content hash), and enqueues downstream work. Replays reuse the same object-store path while each sync request receives a fresh `correlation_id`.
 
 **Scenarios**
-1. **Warm-up (steady)**: constant arrival rate to establish baseline throughput.
-2. **Burst**: short high-rate spike intended to grow queue depth and (if configured) trigger backpressure at the Ingest API.
+1. **Warm-up (steady)**: constant sync rate to establish baseline throughput.
+2. **Burst**: short high-rate spike intended to grow queue depth and (if configured) trigger backpressure at the Adapter API.
 3. **Recovery**: load drops back to baseline (or zero) and the system drains queues back to steady-state.
 
 **Execution**
 ```bash
 make obs-setup
-make obs-load   # runs k6 against the Ingest API
+make obs-load   # runs k6 against the Adapter API
 make obs-cleanup
 ```
 
 **Success criteria**
-- The Ingest API maintains bounded latency until backpressure engages; once engaged it returns `503` quickly (fail-fast) rather than timing out.
+- The Adapter API maintains bounded latency until backpressure engages; once engaged it returns `503` quickly (fail-fast) rather than timing out.
 - Queue depth increases during the burst and returns to baseline during recovery.
 - Retries occur only for retryable failures; non-retryable failures route to DLQ.
 - The Query API remains responsive during the entire test.
 
 **Dashboards (minimal)**
 The Grafana dashboard contains four panels:
-1. **Queue depth** by queue: `extract_text`, `extract_pdf`, `persist_borrower`
+1. **Queue depth** by queue: `document_available`, `extract_text`, `extract_pdf`, `persist_records`
 2. **Worker throughput** (documents/sec) per stage
 3. **Failures & retries**: failed jobs, retry attempts, DLQ count
-4. **End-to-end processing latency**: time from ingest acceptance → borrower persisted (p50/p95)
+4. **End-to-end processing latency**: time from `document_available` enqueued → Postgres upsert (p50/p95)
 ### 12.4 Controlled Failure Injection Specification
 
 Controlled failure injection is part of the **test strategy** for validating retries, backoff, DLQ routing, and backpressure without relying on flaky external dependencies.
@@ -703,18 +743,13 @@ Controlled failure injection is part of the **test strategy** for validating ret
 - `FAILPOINT_PERSIST`: throw a synthetic retryable error immediately before the DB transaction/commit.
 
 **How tests use it**
-- E2E/load tests set a header on ingest (propagated into the job payload) or an env var to activate a specific failpoint.
+- E2E/load tests set a header on sync (propagated into the job payload) or an env var to activate a specific failpoint.
 - Assertions:
   - the job retries exactly once (or up to `MAX_JOB_ATTEMPTS` when configured),
   - retry/backoff metrics increment,
   - successful completion occurs on the next attempt (fail-once mode),
   - DLQ is populated when failures are configured to persist beyond attempts.
 
----
-
-## 13.
-
----
 
 ## 13. Key trade-offs & reasoning
 
@@ -735,28 +770,57 @@ Controlled failure injection is part of the **test strategy** for validating ret
 
 ## Appendix B: Global configuration parameters
 
-- `WORKER_CONCURRENCY_TEXT`
-- `WORKER_CONCURRENCY_PDF`
-- `WORKER_CONCURRENCY_PERSIST`
-- `MAX_JOB_ATTEMPTS`
-- `BACKOFF_BASE_MS`
-- `BACKOFF_JITTER`
+These parameters are intentionally environment-variable driven so throughput and resilience behavior can be tuned without code changes.
+
+### Adapter
+
+- `ADAPTER_POLL_CONCURRENCY` — max concurrent downloads in a single sync pass
+- `ADAPTER_RATE_LIMIT_RPS` — outbound request cap to the external system
+- `SYNC_MAX_DOCUMENTS` — safety cap for one `POST /sync` run
+
+### BullMQ / workers
+
+- `WORKER_CONCURRENCY_DOCUMENT_AVAILABLE`
+- `WORKER_CONCURRENCY_EXTRACT_TEXT`
+- `WORKER_CONCURRENCY_EXTRACT_PDF`
+- `WORKER_CONCURRENCY_PERSIST_RECORDS`
+
+- `BULLMQ_DEFAULT_ATTEMPTS`
+- `BULLMQ_BACKOFF_BASE_MS`
+- `BULLMQ_BACKOFF_JITTER_MS`
+- `BULLMQ_JOB_TIMEOUT_MS`
+
 - `MAX_QUEUE_DEPTH_WARNING`
 - `MAX_QUEUE_DEPTH_REJECT`
-- `RATE_LIMIT_RPS`
-- `LLM_MAX_CONCURRENT_REQUESTS`
-- `ENABLE_CONTROLLED_FAILURES`
-- `BACKOFF_MAX_MS`
-- `CIRCUIT_BREAKER_FAILURE_THRESHOLD`
-- `CIRCUIT_BREAKER_COOLDOWN_MS`
 
-## Appendix C: Controlled failure injection controls
+### Data store
 
-Enable controlled failures only in non-production profiles:
+- `PG_MAX_POOL_SIZE`
+- `PG_STATEMENT_TIMEOUT_MS`
 
-- Env: `ENABLE_CONTROLLED_FAILURES=true`
+### LLM
 
-Activate a specific failpoint for an ingestion request (implementation-specific; one simple option):
+- `LLM_MODEL_TEXT`
+- `LLM_MODEL_PDF`
+- `LLM_REQUEST_TIMEOUT_MS`
+- `LLM_MAX_CONCURRENCY` (optional global limiter)
 
-- Header: `x-failpoint: FAILPOINT_LLM_TEXT | FAILPOINT_LLM_PDF | FAILPOINT_PERSIST`
-- Header: `x-fail-once: true`  (inject only on first attempt for deterministic retries)
+
+## Appendix C: Controlled failure injection
+
+The test suite includes controlled failures to validate retry semantics, DLQ behavior, and correlation-id propagation.
+
+Examples (implemented via env toggles or test hooks):
+
+- `FAIL_ADAPTER_LIST_PERCENT=0..100` — randomly fail external list calls
+- `FAIL_ADAPTER_DOWNLOAD_PERCENT=0..100` — randomly fail external downloads
+- `FAIL_LLM_TEXT_PERCENT=0..100` — randomly fail text extraction calls
+- `FAIL_LLM_PDF_PERCENT=0..100` — randomly fail PDF fallback calls
+- `FAIL_PERSIST_PERCENT=0..100` — randomly fail Postgres upserts
+
+Expected behavior:
+- failures trigger BullMQ nack semantics (throw -> retry)
+- retries follow exponential backoff + jitter
+- repeated failure routes the job to DLQ and increments failure metrics
+- logs include `correlation_id` for traceability
+

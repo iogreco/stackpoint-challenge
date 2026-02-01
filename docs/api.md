@@ -2,10 +2,12 @@
 
 This system exposes two HTTP services:
 
-- **Ingest API** (async ingestion): `http://localhost:8080`
+- **Adapter API** (pull from external systems): `http://localhost:8080`
 - **Query API** (low-latency reads): `http://localhost:8081`
 
-Both services expose Prometheus metrics at `GET /metrics`.
+Workers (ingestion/extraction/persistence) are **queue-driven** and do not require public HTTP endpoints.
+
+Both HTTP services expose Prometheus metrics at `GET /metrics`.
 
 ---
 
@@ -13,7 +15,7 @@ Both services expose Prometheus metrics at `GET /metrics`.
 
 ### Correlation ID
 
-Clients may supply an id for tracing:
+Clients MAY supply an id for tracing:
 
 - Request header: `X-Correlation-Id: <uuid-or-string>`
 
@@ -35,26 +37,30 @@ All non-2xx responses return:
 
 ---
 
-# 1) Ingest API
+# 1) Adapter API
 
-## `POST /ingest`
+The Adapter is the only component that **pulls** from external systems. Everything downstream is **push/event-driven**.
 
-Fetches a PDF from an external source (via a source adapter), stores it in the object store, and enqueues downstream extraction.
+## `POST /sync`
+
+Triggers a single sync pass against a configured external system:
+1) list new documents
+2) download each document
+3) store raw PDF into the object store (demo: shared filesystem)
+4) enqueue `document.available` work items for the downstream pipeline
 
 ### Request body
 
 ```json
 {
   "source_system": "fixture_source",
-  "source_url": "http://fixture-source:9000/docs/closing_disclosure.pdf",
-  "source_filename": "Closing_Disclosure.pdf"
+  "since_cursor": "opaque-string-or-null",
+  "max_documents": 50
 }
 ```
 
-**Notes**
-- `source_url` is fetched by the adapter.
-- `source_filename` is the original filename for provenance; it is stored verbatim.
-- The system computes a stable `document_id` for idempotency (recommended: SHA-256 of the PDF bytes).
+- `since_cursor` is passed through to the external system’s list endpoint (if supported).
+- `max_documents` bounds how many documents the adapter will download in this pass.
 
 ### Response
 
@@ -62,17 +68,14 @@ Fetches a PDF from an external source (via a source adapter), stores it in the o
 
 ```json
 {
-  "correlation_id": "00000000-0000-0000-0000-000000000003",
-  "document_id": "3333333333333333333333333333333333333333333333333333333333333333",
-  "raw_uri": "file://storage/raw/fixture_source/3333333333333333333333333333333333333333333333333333333333333333.pdf"
+  "correlation_id": "00000000-0000-0000-0000-000000000003"
 }
 ```
 
 ### Errors
 
 - `400` invalid request body
-- `422` unsupported file type / invalid PDF
-- `502` source adapter fetch failed
+- `502` external system list/download failure
 
 ---
 
@@ -142,3 +145,41 @@ This endpoint is the primary way to retrieve a record when the user has a loan n
 ### Errors
 
 - `404` application not found
+
+---
+
+# 3) External Source API (mock fixture source)
+
+This is the minimal external API shape the Adapter integrates with in the demo.
+
+Base URL (docker-compose): `http://fixture-source:9000`
+
+## `GET /documents`
+
+Lists documents available for sync.
+
+### Query parameters
+
+- `since_cursor` (optional): opaque cursor
+
+### Response
+
+- `200 OK`
+
+```json
+{
+  "items": [
+    {
+      "source_doc_id": "doc_001",
+      "filename": "Closing_Disclosure.pdf",
+      "download_url": "http://fixture-source:9000/documents/doc_001",
+      "updated_at": "2026-01-31T22:00:00Z"
+    }
+  ],
+  "next_cursor": "opaque-string-or-null"
+}
+```
+
+## `GET /documents/{source_doc_id}`
+
+Downloads the raw PDF bytes for a document.

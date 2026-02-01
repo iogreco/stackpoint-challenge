@@ -18,6 +18,24 @@ Tests validate fixture outputs against:
 - `docs/contracts/borrower_record.schema.json`
 - `docs/contracts/application_record.schema.json`
 
+## Pipeline entrypoint (event-driven)
+
+The Adapter Service is the only component that **pulls** from external systems.
+Fixtures simulate the same behavior by placing PDFs in `fixtures/corpus/` and triggering the adapter sync.
+
+Downstream processing is **push/event-driven**:
+- Adapter emits `document.available`
+- workers process through extraction and persistence stages
+- Query API reads persisted results from Postgres
+
+### Adapter provenance fields
+
+`ExtractionResult.document` MUST include:
+- `source_system`
+- `source_doc_id`
+
+These fields come from the adapter list/download workflow and are required for end-to-end traceability.
+
 ## Snapshot strategy
 
 The system is async and some fields are inherently non-deterministic. Snapshot tests:
@@ -90,7 +108,7 @@ For every `evidence[]` array in any object:
 When contracts or prompts change:
 
 1. Update JSON Schemas under `docs/contracts/` (if required).
-2. Run the pipeline on `fixtures/corpus/`.
+2. Run the pipeline on `fixtures/corpus/` (via `POST /sync` against the Adapter).
 3. Normalize + strip volatile fields using the same logic as the tests.
 4. Review diffs for:
    - value changes
