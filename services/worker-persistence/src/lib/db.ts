@@ -149,18 +149,22 @@ async function upsertBorrower(
 
   // Upsert addresses
   for (const addr of borrower.addresses) {
-    const evidence = addr.evidence[0];
+    const evidence = addr.evidence?.[0];
+    if (!evidence) {
+      logger.warn('Skipping address without evidence', { borrowerId, address: addr });
+      continue;
+    }
     await client.query(
       `INSERT INTO borrower_addresses (borrower_id, address_type, street1, street2, city, state, zip, document_id, page_number, quote)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         borrowerId,
         addr.type,
-        addr.value.street1 || null,
-        addr.value.street2 || null,
-        addr.value.city || null,
-        addr.value.state || null,
-        addr.value.zip,
+        addr.value?.street1 || null,
+        addr.value?.street2 || null,
+        addr.value?.city || null,
+        addr.value?.state || null,
+        addr.value?.zip || null,
         evidence.document_id,
         evidence.page_number,
         evidence.quote,
@@ -170,7 +174,11 @@ async function upsertBorrower(
 
   // Upsert income history
   for (const income of borrower.income_history) {
-    const evidence = income.evidence[0];
+    const evidence = income.evidence?.[0];
+    if (!evidence) {
+      logger.warn('Skipping income without evidence', { borrowerId, income });
+      continue;
+    }
     await client.query(
       `INSERT INTO borrower_incomes (borrower_id, source_type, employer, period_year, amount, currency, frequency, document_id, page_number, quote)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
@@ -191,7 +199,11 @@ async function upsertBorrower(
 
   // Upsert identifiers
   for (const id of borrower.identifiers) {
-    const evidence = id.evidence[0];
+    const evidence = id.evidence?.[0];
+    if (!evidence) {
+      logger.warn('Skipping identifier without evidence', { borrowerId, identifier: id });
+      continue;
+    }
     await client.query(
       `INSERT INTO borrower_identifiers (borrower_id, identifier_type, identifier_value, document_id, page_number, quote)
        VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -243,8 +255,11 @@ async function upsertApplication(
   // Upsert property address
   const propAddr = application.property_address;
   if (propAddr) {
-    const evidence = propAddr.evidence[0];
-    await client.query(
+    const evidence = propAddr.evidence?.[0];
+    if (!evidence) {
+      logger.warn('Skipping property address without evidence', { applicationId, propAddr });
+    } else {
+      await client.query(
       `INSERT INTO application_addresses (application_id, address_type, street1, street2, city, state, zip, document_id, page_number, quote)
        VALUES ($1, 'property', $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
@@ -259,11 +274,16 @@ async function upsertApplication(
         evidence.quote,
       ]
     );
+    }
   }
 
   // Upsert application identifiers
   for (const id of application.identifiers) {
-    const evidence = id.evidence[0];
+    const evidence = id.evidence?.[0];
+    if (!evidence) {
+      logger.warn('Skipping application identifier without evidence', { applicationId, identifier: id });
+      continue;
+    }
     await client.query(
       `INSERT INTO application_identifiers (application_id, identifier_type, identifier_value, document_id, page_number, quote)
        VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -298,12 +318,16 @@ async function upsertApplication(
     );
 
     // Add party evidence from loan_number
-    const evidence = application.loan_number.evidence[0];
-    await client.query(
-      `INSERT INTO application_party_evidence (application_id, borrower_id, document_id, page_number, quote)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [applicationId, borrowerId, evidence.document_id, evidence.page_number, evidence.quote]
-    );
+    const evidence = application.loan_number.evidence?.[0];
+    if (evidence) {
+      await client.query(
+        `INSERT INTO application_party_evidence (application_id, borrower_id, document_id, page_number, quote)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [applicationId, borrowerId, evidence.document_id, evidence.page_number, evidence.quote]
+      );
+    } else {
+      logger.warn('Skipping party evidence - no loan_number evidence', { applicationId, borrowerId });
+    }
   }
 }
 
