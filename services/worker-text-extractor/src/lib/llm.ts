@@ -124,7 +124,11 @@ const EXTRACTION_SCHEMA = {
               additionalProperties: false,
               required: ['value', 'evidence'],
               properties: {
-                value: { type: 'string', description: 'ZIP code (5 digits or 5+4 format)' },
+                value: {
+                  type: 'string',
+                  description:
+                    "ZIP code of the borrower's residence only (5 or 5+4 digits). Do NOT use the employer's business address ZIP from employment verification (EVOE/VOE) documents.",
+                },
                 evidence: {
                   type: 'array',
                   items: { $ref: '#/$defs/evidence' },
@@ -133,6 +137,8 @@ const EXTRACTION_SCHEMA = {
             },
             addresses: {
               type: 'array',
+              description:
+                "Borrower's residence addresses only. Exclude employer or business addresses (e.g. addresses under EMPLOYER section in EVOE/VOE).",
               items: { $ref: '#/$defs/address_extraction' },
             },
             income_history: {
@@ -267,6 +273,11 @@ EXTRACTION RULES:
 1. Extract all borrower information: full name, addresses, income records, and identifiers (SSN, account numbers)
 2. Extract all application/loan information: loan numbers, property addresses
 3. Link borrowers to applications using the parties array
+
+BORROWER ADDRESSES (critical):
+- borrower.addresses and borrower.zip must be the BORROWER'S RESIDENCE (home/mailing address), not the employer's address.
+- In employment verification documents (EVOE, VOE, etc.), the address under "EMPLOYER" or "Employer" is the employer's business address. Do NOT use it as the borrower's address.
+- If the document only shows an employer address and no borrower residence, leave addresses [] and zip "" and add borrower.addresses (and borrower.zip if needed) to missing_fields.
 
 EVIDENCE REQUIREMENTS:
 - Every extracted value MUST have at least one evidence entry
