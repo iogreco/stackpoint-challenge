@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0.0",
+  "correlation_id": "00000000-0000-0000-0000-000000000003",
+  "document": {
+    "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
+    "source_filename": "Closing_Disclosure.pdf",
+    "raw_uri": "file://storage/raw/local_folder/c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517.pdf",
+    "source_system": "local_folder"
+  },
+  "extraction_mode": "text",
+  "borrowers": [
+    {
+      "borrower_ref": "b1",
+      "full_name": {
+        "value": "John Homeowner",
+        "evidence": [
+          {
+            "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
+            "source_filename": "Closing_Disclosure.pdf",
+            "page_number": 1,
+            "quote": "ny File #: 123456789 Property: 999 Test Place, Washington, DC 20013 Sale Price: $350,000 Transaction Information Borrower: John Homeowner and Mary Homeowner Seller: Mike Seller Lender: XYZ Mortgage Company Loan Information Loan Term: 30"
+          }
+        ]
+      },
+      "zip": {
+        "value": "20013",
+        "evidence": [
+          {
+            "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
+            "source_filename": "Closing_Disclosure.pdf",
+            "page_number": 1,
+            "quote": "/2025 Closing Date: 07/25/2025 Disbursement Date: 07/29/2025 Settlement Agent: ABC Title Company File #: 123456789 Property: 999 Test Place, Washington, DC 20013 Sale Price: $350,000 Transaction Information Borrower: John Homeowner and Mar"
+          }
+        ]
+      },
+      "addresses": [
+        {
+          "type": "property",
+          "value": {
+            "street1": "999 Test Place",
+            "city": "Washington",
+            "state": "DC",
+            "zip": "20013"
+          },
+          "evidence": [
+            {
+              "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
+              "source_filename": "Closing_Disclosure.pdf",
+              "page_number": 1,
+              "quote": "/2025 Closing Date: 07/25/2025 Disbursement Date: 07/29/2025 Settlement Agent: ABC Title Company File #: 123456789 Property: 999 Test Place, Washington, DC 20013 Sale Price: $350,000 Transaction Information Borrower: John Homeowner and Mar"
+            }
+          ]
+        }
+      ],
+      "income_history": [],
+      "identifiers": [
+        {
+          "type": "loan_number",
+          "value": "TEST250700110",
+          "evidence": [
+            {
+              "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
+              "source_filename": "Closing_Disclosure.pdf",
+              "page_number": 1,
+              "quote": "gage Company Loan Information Loan Term: 30 years Purpose: Purchase Product: Fixed Rate Loan Type: Conventional Loan ID #: TEST250700110 MIC #: 9876543210 Loan Terms Description Amount Can this amount increase after closing? Loan Amo"
+            }
+          ]
+        },
+        {
+          "type": "other",
+          "value": "settlement_file:123456789",
+          "evidence": [
+            {
+              "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
+              "source_filename": "Closing_Disclosure.pdf",
+              "page_number": 1,
+              "quote": "07/25/2025 Disbursement Date: 07/29/2025 Settlement Agent: ABC Title Company File #: 123456789 Property: 999 Test Place, Washington, DC 20013 Sale Price: $350,000"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "borrower.income_history"
+      ]
+    },
+    {
+      "borrower_ref": "b2",
+      "full_name": {
+        "value": "Mary Homeowner",
+        "evidence": [
+          {
+            "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
+            "source_filename": "Closing_Disclosure.pdf",
+            "page_number": 1,
+            "quote": "ny File #: 123456789 Property: 999 Test Place, Washington, DC 20013 Sale Price: $350,000 Transaction Information Borrower: John Homeowner and Mary Homeowner Seller: Mike Seller Lender: XYZ Mortgage Company Loan Information Loan Term: 30"
+          }
+        ]
+      },
+      "zip": {
+        "value": "20013",
+        "evidence": [
+          {
+            "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
+            "source_filename": "Closing_Disclosure.pdf",
+            "page_number": 1,
+            "quote": "/2025 Closing Date: 07/25/2025 Disbursement Date: 07/29/2025 Settlement Agent: ABC Title Company File #: 123456789 Property: 999 Test Place, Washington, DC 20013 Sale Price: $350,000 Transaction Information Borrower: John Homeowner and Mar"
+          }
+        ]
+      },
+      "addresses": [
+        {
+          "type": "property",
+          "value": {
+            "street1": "999 Test Place",
+            "city": "Washington",
+            "state": "DC",
+            "zip": "20013"
+          },
+          "evidence": [
+            {
+              "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
+              "source_filename": "Closing_Disclosure.pdf",
+              "page_number": 1,
+              "quote": "/2025 Closing Date: 07/25/2025 Disbursement Date: 07/29/2025 Settlement Agent: ABC Title Company File #: 123456789 Property: 999 Test Place, Washington, DC 20013 Sale Price: $350,000 Transaction Information Borrower: John Homeowner and Mar"
+            }
+          ]
+        }
+      ],
+      "income_history": [],
+      "identifiers": [
+        {
+          "type": "loan_number",
+          "value": "TEST250700110",
+          "evidence": [
+            {
+              "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
+              "source_filename": "Closing_Disclosure.pdf",
+              "page_number": 1,
+              "quote": "gage Company Loan Information Loan Term: 30 years Purpose: Purchase Product: Fixed Rate Loan Type: Conventional Loan ID #: TEST250700110 MIC #: 9876543210 Loan Terms Description Amount Can this amount increase after closing? Loan Amo"
+            }
+          ]
+        },
+        {
+          "type": "other",
+          "value": "settlement_file:123456789",
+          "evidence": [
+            {
+              "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
+              "source_filename": "Closing_Disclosure.pdf",
+              "page_number": 1,
+              "quote": "07/25/2025 Disbursement Date: 07/29/2025 Settlement Agent: ABC Title Company File #: 123456789 Property: 999 Test Place, Washington, DC 20013 Sale Price: $350,000"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "borrower.income_history"
+      ]
+    }
+  ],
+  "missing_fields": [
+    "borrower.income_history"
+  ],
+  "warnings": [],
+  "extraction_metadata": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "request_id": "REQ-CLOSE-EXAMPLE",
+    "prompt_version": "1.0.0"
+  },
+  "created_at": "2026-01-31T00:00:00+00:00"
+}

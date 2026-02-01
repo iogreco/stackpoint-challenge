@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stackpoint.local/schemas/borrower_record.schema.json",
+  "title": "BorrowerRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "borrower_id",
+    "borrower_key",
+    "status",
+    "full_name",
+    "zip",
+    "addresses",
+    "income_history",
+    "identifiers",
+    "applications",
+    "documents",
+    "updated_at"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.1.0" },
+
+    "borrower_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Internal stable identifier (UUID recommended)."
+    },
+
+    "borrower_key": {
+      "type": "string",
+      "minLength": 8,
+      "description": "Deterministic match key (e.g., sha256(normalized_full_name|zip))."
+    },
+
+    "status": {
+      "type": "string",
+      "enum": ["COMPLETE", "PARTIAL"],
+      "description": "COMPLETE means required borrower fields are present; PARTIAL otherwise."
+    },
+
+    "full_name": { "type": "string", "minLength": 1 },
+
+    "zip": { "type": "string", "pattern": "^[0-9]{5}(-[0-9]{4})?$" },
+
+    "addresses": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/address" }
+    },
+
+    "income_history": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/income" }
+    },
+
+    "identifiers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+
+    "applications": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/application_link" },
+      "description": "Links to applications (party groups) the borrower appears on."
+    },
+
+    "documents": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/document_ref" },
+      "description": "Documents that contributed evidence to this borrower record."
+    },
+
+    "last_correlation_id": {
+      "type": "string",
+      "description": "Correlation id of the most recent successful pipeline attempt that updated this record."
+    },
+
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document_id", "source_filename", "page_number", "quote"],
+      "properties": {
+        "document_id": { "type": "string", "minLength": 16 },
+        "source_filename": { "type": "string", "minLength": 1 },
+        "page_number": { "type": "integer", "minimum": 1 },
+        "quote": { "type": "string", "minLength": 1, "maxLength": 300 }
+      }
+    },
+
+    "address": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "zip", "evidence"],
+      "properties": {
+        "type": { "type": "string", "enum": ["current", "previous", "mailing", "property"] },
+        "street1": { "type": "string" },
+        "street2": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string", "minLength": 2, "maxLength": 2 },
+        "zip": { "type": "string", "pattern": "^[0-9]{5}(-[0-9]{4})?$" },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+
+    "income": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_type", "period_year", "amount", "currency", "evidence"],
+      "properties": {
+        "source_type": {
+          "type": "string",
+          "enum": ["w2", "paystub", "tax_return_1040", "schedule_c", "bank_statement", "other"]
+        },
+        "employer": { "type": "string" },
+
+        "period_year": { "type": "integer", "minimum": 1900, "maximum": 2100 },
+
+        "amount": { "type": "number" },
+
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$", "default": "USD" },
+
+        "frequency": {
+          "type": "string",
+          "enum": ["annual", "monthly", "biweekly", "weekly", "daily", "unknown"],
+          "default": "unknown"
+        },
+
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+
+    "identifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value", "evidence"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["loan_number", "account_number", "ssn", "ein", "other"]
+        },
+        "value": { "type": "string", "minLength": 1 },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+
+    "application_link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["application_id", "loan_number", "role", "evidence"],
+      "properties": {
+        "application_id": { "type": "string", "minLength": 1 },
+        "loan_number": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "enum": ["borrower", "co_borrower", "other"] },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+
+    "document_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document_id", "source_filename", "raw_uri", "processed_at", "correlation_id"],
+      "properties": {
+        "document_id": { "type": "string", "minLength": 16 },
+        "source_filename": { "type": "string", "minLength": 1 },
+        "raw_uri": { "type": "string", "minLength": 1 },
+        "correlation_id": { "type": "string", "minLength": 1 },
+        "processed_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

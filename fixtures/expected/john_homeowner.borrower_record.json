@@ -1,0 +1,144 @@
+{
+  "schema_version": "1.0.0",
+  "borrower_id": "11111111-1111-1111-1111-111111111111",
+  "borrower_key": "9f2cf529d2c6cf4b924fcb1755bc62d7ebd8ea147fece0165ac96bf883197d72",
+  "status": "COMPLETE",
+  "full_name": "John Homeowner",
+  "zip": "20013",
+  "addresses": [
+    {
+      "type": "current",
+      "street1": "175 13th Street",
+      "city": "Washington",
+      "state": "DC",
+      "zip": "20013",
+      "evidence": [
+        {
+          "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+          "source_filename": "Paystub- John Homeowner (Current).pdf",
+          "page_number": 1,
+          "quote": "John Homeowner\n175 13th Street\nWashington, DC 20013"
+        }
+      ]
+    },
+    {
+      "type": "property",
+      "street1": "999 Test Place",
+      "city": "Washington",
+      "state": "DC",
+      "zip": "20013",
+      "evidence": [
+        {
+          "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
+          "source_filename": "Closing_Disclosure.pdf",
+          "page_number": 1,
+          "quote": "/2025 Closing Date: 07/25/2025 Disbursement Date: 07/29/2025 Settlement Agent: ABC Title Company File #: 123456789 Property: 999 Test Place, Washington, DC 20013 Sale Price: $350,000 Transaction Information Borrower: John Homeowner and Mar"
+        }
+      ]
+    }
+  ],
+  "income_history": [
+    {
+      "source_type": "w2",
+      "employer": "ABC Technologies",
+      "period_year": 2024,
+      "amount": 117040.19,
+      "currency": "USD",
+      "frequency": "annual",
+      "evidence": [
+        {
+          "document_id": "bd89e0ec8427983743b99802e39df0b9ca4fa196d2edb319bdd9bd0905718df1",
+          "source_filename": "W2 2024- John Homeowner.pdf",
+          "page_number": 1,
+          "quote": "0 Employee Reference Copy Wage and Tax Statement 117040.19 14980.17 121790.22 7550.98 999-40-5000 Sample Doc"
+        }
+      ]
+    },
+    {
+      "source_type": "paystub",
+      "employer": "ABC Technologies",
+      "period_year": 2025,
+      "amount": 4900.0,
+      "currency": "USD",
+      "frequency": "biweekly",
+      "evidence": [
+        {
+          "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+          "source_filename": "Paystub- John Homeowner (Current).pdf",
+          "page_number": 1,
+          "quote": "rrent YTD Bonus HSA 50.00 450.00 - Total Work Hrs 80.00 Gross Pay 4,900.00 44,100.00 Basis of Pay: Salary Deductions Statutory Federal"
+        }
+      ]
+    }
+  ],
+  "identifiers": [
+    {
+      "type": "ssn",
+      "value": "999-40-5000",
+      "evidence": [
+        {
+          "document_id": "bd89e0ec8427983743b99802e39df0b9ca4fa196d2edb319bdd9bd0905718df1",
+          "source_filename": "W2 2024- John Homeowner.pdf",
+          "page_number": 1,
+          "quote": "x Statement 117040.19 14980.17 121790.22 7550.98 999-40-5000 Sample Document-For Demo Purposes Only \u00a9 2024 Int"
+        }
+      ]
+    },
+    {
+      "type": "account_number",
+      "value": "123456789",
+      "evidence": [
+        {
+          "document_id": "151c6e3d9ea91cab703b1ca44daa586e7d5a5c4e092d49da6cb41afbb14ba40c",
+          "source_filename": "Checking - John Mary Homeowner (Current).pdf",
+          "page_number": 1,
+          "quote": "ACCOUNT STATEMENT Account Number: 123456789 Statement Period Start: 4/1/2025 Statement Period End: 4/30/2025 Customer Servi"
+        }
+      ]
+    },
+    {
+      "type": "loan_number",
+      "value": "TEST250700110",
+      "evidence": [
+        {
+          "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
+          "source_filename": "Closing_Disclosure.pdf",
+          "page_number": 1,
+          "quote": "gage Company Loan Information Loan Term: 30 years Purpose: Purchase Product: Fixed Rate Loan Type: Conventional Loan ID #: TEST250700110 MIC #: 9876543210 Loan Terms Description Amount Can this amount increase after closing? Loan Amo"
+        }
+      ]
+    }
+  ],
+  "documents": [
+    {
+      "document_id": "bd89e0ec8427983743b99802e39df0b9ca4fa196d2edb319bdd9bd0905718df1",
+      "source_filename": "W2 2024- John Homeowner.pdf",
+      "raw_uri": "file://storage/raw/local_folder/bd89e0ec8427983743b99802e39df0b9ca4fa196d2edb319bdd9bd0905718df1.pdf",
+      "correlation_id": "00000000-0000-0000-0000-000000000001",
+      "processed_at": "2026-01-31T00:00:00+00:00"
+    },
+    {
+      "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+      "source_filename": "Paystub- John Homeowner (Current).pdf",
+      "raw_uri": "file://storage/raw/local_folder/5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d.pdf",
+      "correlation_id": "00000000-0000-0000-0000-000000000002",
+      "processed_at": "2026-01-31T00:00:00+00:00"
+    },
+    {
+      "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
+      "source_filename": "Closing_Disclosure.pdf",
+      "raw_uri": "file://storage/raw/local_folder/c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517.pdf",
+      "correlation_id": "00000000-0000-0000-0000-000000000003",
+      "processed_at": "2026-01-31T00:00:00+00:00"
+    },
+    {
+      "document_id": "151c6e3d9ea91cab703b1ca44daa586e7d5a5c4e092d49da6cb41afbb14ba40c",
+      "source_filename": "Checking - John Mary Homeowner (Current).pdf",
+      "raw_uri": "file://storage/raw/local_folder/151c6e3d9ea91cab703b1ca44daa586e7d5a5c4e092d49da6cb41afbb14ba40c.pdf",
+      "correlation_id": "00000000-0000-0000-0000-000000000004",
+      "processed_at": "2026-01-31T00:00:00+00:00"
+    }
+  ],
+  "last_correlation_id": "00000000-0000-0000-0000-000000000002",
+  "updated_at": "2026-01-31T00:00:00+00:00"
+}

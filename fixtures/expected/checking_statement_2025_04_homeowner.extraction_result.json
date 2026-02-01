@@ -1,0 +1,148 @@
+{
+  "schema_version": "1.0.0",
+  "correlation_id": "00000000-0000-0000-0000-000000000004",
+  "document": {
+    "document_id": "151c6e3d9ea91cab703b1ca44daa586e7d5a5c4e092d49da6cb41afbb14ba40c",
+    "source_filename": "Checking - John Mary Homeowner (Current).pdf",
+    "raw_uri": "file://storage/raw/local_folder/151c6e3d9ea91cab703b1ca44daa586e7d5a5c4e092d49da6cb41afbb14ba40c.pdf",
+    "source_system": "local_folder"
+  },
+  "extraction_mode": "text",
+  "borrowers": [
+    {
+      "borrower_ref": "b1",
+      "full_name": {
+        "value": "John Homeowner",
+        "evidence": [
+          {
+            "document_id": "151c6e3d9ea91cab703b1ca44daa586e7d5a5c4e092d49da6cb41afbb14ba40c",
+            "source_filename": "Checking - John Mary Homeowner (Current).pdf",
+            "page_number": 1,
+            "quote": "23 Bank Street Sandy Springs, GA 30350 24-Hour Telephone Banking: (866)555-5555 John Homeowner Mary Homeowner Online Banking: 175 13th Street www.sandyspringscu.com Washingto"
+          }
+        ]
+      },
+      "zip": {
+        "value": "20013",
+        "evidence": [
+          {
+            "document_id": "151c6e3d9ea91cab703b1ca44daa586e7d5a5c4e092d49da6cb41afbb14ba40c",
+            "source_filename": "Checking - John Mary Homeowner (Current).pdf",
+            "page_number": 1,
+            "quote": "Homeowner Mary Homeowner Online Banking: 175 13th Street www.sandyspringscu.com Washington, DC 20013 EasyChecking Account Number 123456789 Beginning Balance 8,355.00 $ Ann"
+          }
+        ]
+      },
+      "addresses": [
+        {
+          "type": "current",
+          "value": {
+            "street1": "175 13th Street",
+            "city": "Washington",
+            "state": "DC",
+            "zip": "20013"
+          },
+          "evidence": [
+            {
+              "document_id": "151c6e3d9ea91cab703b1ca44daa586e7d5a5c4e092d49da6cb41afbb14ba40c",
+              "source_filename": "Checking - John Mary Homeowner (Current).pdf",
+              "page_number": 1,
+              "quote": "Homeowner Mary Homeowner Online Banking: 175 13th Street www.sandyspringscu.com Washington, DC 20013 EasyChecking Account Number 123456789 Beginning Balance 8,355.00 $ Ann"
+            }
+          ]
+        }
+      ],
+      "income_history": [],
+      "identifiers": [
+        {
+          "type": "account_number",
+          "value": "123456789",
+          "evidence": [
+            {
+              "document_id": "151c6e3d9ea91cab703b1ca44daa586e7d5a5c4e092d49da6cb41afbb14ba40c",
+              "source_filename": "Checking - John Mary Homeowner (Current).pdf",
+              "page_number": 1,
+              "quote": "ACCOUNT STATEMENT Account Number: 123456789 Statement Period Start: 4/1/2025 Statement Period End: 4/30/2025 Customer Servi"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "borrower.income_history"
+      ]
+    },
+    {
+      "borrower_ref": "b2",
+      "full_name": {
+        "value": "Mary Homeowner",
+        "evidence": [
+          {
+            "document_id": "151c6e3d9ea91cab703b1ca44daa586e7d5a5c4e092d49da6cb41afbb14ba40c",
+            "source_filename": "Checking - John Mary Homeowner (Current).pdf",
+            "page_number": 1,
+            "quote": "23 Bank Street Sandy Springs, GA 30350 24-Hour Telephone Banking: (866)555-5555 John Homeowner Mary Homeowner Online Banking: 175 13th Street www.sandyspringscu.com Washingto"
+          }
+        ]
+      },
+      "zip": {
+        "value": "20013",
+        "evidence": [
+          {
+            "document_id": "151c6e3d9ea91cab703b1ca44daa586e7d5a5c4e092d49da6cb41afbb14ba40c",
+            "source_filename": "Checking - John Mary Homeowner (Current).pdf",
+            "page_number": 1,
+            "quote": "Homeowner Mary Homeowner Online Banking: 175 13th Street www.sandyspringscu.com Washington, DC 20013 EasyChecking Account Number 123456789 Beginning Balance 8,355.00 $ Ann"
+          }
+        ]
+      },
+      "addresses": [
+        {
+          "type": "current",
+          "value": {
+            "street1": "175 13th Street",
+            "city": "Washington",
+            "state": "DC",
+            "zip": "20013"
+          },
+          "evidence": [
+            {
+              "document_id": "151c6e3d9ea91cab703b1ca44daa586e7d5a5c4e092d49da6cb41afbb14ba40c",
+              "source_filename": "Checking - John Mary Homeowner (Current).pdf",
+              "page_number": 1,
+              "quote": "Homeowner Mary Homeowner Online Banking: 175 13th Street www.sandyspringscu.com Washington, DC 20013 EasyChecking Account Number 123456789 Beginning Balance 8,355.00 $ Ann"
+            }
+          ]
+        }
+      ],
+      "income_history": [],
+      "identifiers": [
+        {
+          "type": "account_number",
+          "value": "123456789",
+          "evidence": [
+            {
+              "document_id": "151c6e3d9ea91cab703b1ca44daa586e7d5a5c4e092d49da6cb41afbb14ba40c",
+              "source_filename": "Checking - John Mary Homeowner (Current).pdf",
+              "page_number": 1,
+              "quote": "ACCOUNT STATEMENT Account Number: 123456789 Statement Period Start: 4/1/2025 Statement Period End: 4/30/2025 Customer Servi"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "borrower.income_history"
+      ]
+    }
+  ],
+  "missing_fields": [
+    "borrower.income_history"
+  ],
+  "warnings": [],
+  "extraction_metadata": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "request_id": "REQ-CHK-EXAMPLE",
+    "prompt_version": "1.0.0"
+  },
+  "created_at": "2026-01-31T00:00:00+00:00"
+}

@@ -1,0 +1,115 @@
+{
+  "schema_version": "1.0.0",
+  "correlation_id": "00000000-0000-0000-0000-000000000002",
+  "document": {
+    "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+    "source_filename": "Paystub- John Homeowner (Current).pdf",
+    "raw_uri": "file://storage/raw/local_folder/5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d.pdf",
+    "source_system": "local_folder"
+  },
+  "extraction_mode": "text",
+  "borrowers": [
+    {
+      "borrower_ref": "b1",
+      "full_name": {
+        "value": "John Homeowner",
+        "evidence": [
+          {
+            "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+            "source_filename": "Paystub- John Homeowner (Current).pdf",
+            "page_number": 1,
+            "quote": "John Homeowner\n175 13th Street\nWashington, DC 20013"
+          }
+        ]
+      },
+      "zip": {
+        "value": "20013",
+        "evidence": [
+          {
+            "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+            "source_filename": "Paystub- John Homeowner (Current).pdf",
+            "page_number": 1,
+            "quote": "Washington, DC 20013"
+          }
+        ]
+      },
+      "addresses": [
+        {
+          "type": "current",
+          "value": {
+            "street1": "175 13th Street",
+            "city": "Washington",
+            "state": "DC",
+            "zip": "20013"
+          },
+          "evidence": [
+            {
+              "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+              "source_filename": "Paystub- John Homeowner (Current).pdf",
+              "page_number": 1,
+              "quote": "John Homeowner\n175 13th Street\nWashington, DC 20013"
+            }
+          ]
+        }
+      ],
+      "income_history": [
+        {
+          "source_type": "paystub",
+          "employer": "ABC Technologies",
+          "period": {
+            "year": 2025,
+            "start_date": "2025-04-12",
+            "end_date": "2025-04-25"
+          },
+          "amount": 4900.0,
+          "currency": "USD",
+          "frequency": "biweekly",
+          "evidence": [
+            {
+              "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+              "source_filename": "Paystub- John Homeowner (Current).pdf",
+              "page_number": 1,
+              "quote": "rrent YTD Bonus HSA 50.00 450.00 - Total Work Hrs 80.00 Gross Pay 4,900.00 44,100.00 Basis of Pay: Salary Deductions Statutory Federal"
+            }
+          ]
+        }
+      ],
+      "identifiers": [
+        {
+          "type": "account_number",
+          "value": "****4456",
+          "evidence": [
+            {
+              "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+              "source_filename": "Paystub- John Homeowner (Current).pdf",
+              "page_number": 1,
+              "quote": "to the account of Acct. # transit ABA Amount John Homeowner ****4456 10200101 3,377.21 ***THIS IS NOT A CHECK*** 1,572.79"
+            }
+          ]
+        },
+        {
+          "type": "other",
+          "value": "advice_number:876543",
+          "evidence": [
+            {
+              "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+              "source_filename": "Paystub- John Homeowner (Current).pdf",
+              "page_number": 1,
+              "quote": "267.75 *Retirement 294.00 2,646.00 ABC Technologies Advice Number: 876543 2390 Sunny Drive Pay Date: 04/25/25 Louisville, KY 40207 Deposited to the accou"
+            }
+          ]
+        }
+      ],
+      "missing_fields": []
+    }
+  ],
+  "missing_fields": [],
+  "warnings": [],
+  "extraction_metadata": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "request_id": "REQ-PAY-EXAMPLE",
+    "prompt_version": "1.0.0"
+  },
+  "created_at": "2026-01-31T00:00:00+00:00"
+}

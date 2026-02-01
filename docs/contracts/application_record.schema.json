@@ -1,0 +1,131 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://stackpoint.local/schemas/application_record.schema.json",
+    "title": "ApplicationRecord",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "application_id",
+      "loan_number",
+      "property_address",
+      "parties",
+      "identifiers",
+      "documents",
+      "updated_at"
+    ],
+    "properties": {
+      "schema_version": { "type": "string", "const": "1.1.0" },
+  
+      "application_id": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Internal stable identifier (UUID recommended)."
+      },
+  
+      "loan_number": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Primary external key for the application when present in the corpus."
+      },
+  
+      "property_address": { "$ref": "#/$defs/address" },
+  
+      "parties": {
+        "type": "array",
+        "minItems": 1,
+        "items": { "$ref": "#/$defs/party" },
+        "description": "All parties on the application (borrower/co-borrower/other)."
+      },
+  
+      "identifiers": {
+        "type": "array",
+        "items": { "$ref": "#/$defs/identifier" },
+        "description": "Other identifiers found in documents (e.g., settlement file number)."
+      },
+  
+      "documents": {
+        "type": "array",
+        "items": { "$ref": "#/$defs/document_ref" },
+        "description": "Documents that contributed evidence to this application record."
+      },
+  
+      "updated_at": { "type": "string", "format": "date-time" }
+    },
+  
+    "$defs": {
+      "evidence": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["document_id", "source_filename", "page_number", "quote"],
+        "properties": {
+          "document_id": { "type": "string", "minLength": 16 },
+          "source_filename": { "type": "string", "minLength": 1 },
+          "page_number": { "type": "integer", "minimum": 1 },
+          "quote": { "type": "string", "minLength": 1, "maxLength": 300 }
+        }
+      },
+  
+      "address": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "zip", "evidence"],
+        "properties": {
+          "type": { "type": "string", "enum": ["property"] },
+          "street1": { "type": "string" },
+          "street2": { "type": "string" },
+          "city": { "type": "string" },
+          "state": { "type": "string", "minLength": 2, "maxLength": 2 },
+          "zip": { "type": "string", "pattern": "^[0-9]{5}(-[0-9]{4})?$" },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/evidence" }
+          }
+        }
+      },
+  
+      "party": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["borrower_id", "full_name", "role"],
+        "properties": {
+          "borrower_id": { "type": "string", "minLength": 1 },
+          "full_name": { "type": "string", "minLength": 1 },
+          "role": { "type": "string", "enum": ["borrower", "co_borrower", "other"] }
+        }
+      },
+  
+      "identifier": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "value", "evidence"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["loan_number", "account_number", "ssn", "ein", "other"]
+          },
+          "value": { "type": "string", "minLength": 1 },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/evidence" }
+          }
+        }
+      },
+  
+      "document_ref": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["document_id", "source_filename", "raw_uri", "processed_at", "correlation_id"],
+        "properties": {
+          "document_id": { "type": "string", "minLength": 16 },
+          "source_filename": { "type": "string", "minLength": 1 },
+          "raw_uri": { "type": "string", "minLength": 1 },
+          "correlation_id": { "type": "string", "minLength": 1 },
+          "processed_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+  
