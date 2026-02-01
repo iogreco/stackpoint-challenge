@@ -49,6 +49,25 @@ Triggers a single sync pass against a configured external system:
 3) store raw PDF into the object store (demo: shared filesystem)
 4) enqueue `document.available` work items for the downstream pipeline
 
+### `document.available` job payload (enqueued to `document_available`)
+
+Note: The event type is `document.available` and it is enqueued onto the BullMQ queue named `document_available`.
+
+
+```json
+{
+  "event_type": "document.available",
+  "correlation_id": "01J4Z0D0Q9QW4B7Y6K8J2H3R1M",
+  "document_id": "sha256:4e9f6c6b2b6f7b2e5f3d0a8f0c8b2b4b7b9e3a1c6d2e1f0a9b8c7d6e5f4a3b2c",
+  "raw_uri": "file://object-store/raw/fixture_source/4e9f6c6b2b6f7b2e5f3d0a8f0c8b2b4b7b9e3a1c6d2e1f0a9b8c7d6e5f4a3b2c.pdf",
+  "source_system": "fixture_source",
+  "source_doc_id": "doc_001",
+  "source_filename": "Closing_Disclosure.pdf",
+  "discovered_at": "2026-01-31T22:00:00Z"
+}
+```
+
+
 ### Request body
 
 ```json

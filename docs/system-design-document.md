@@ -516,6 +516,24 @@ The pipeline uses dedicated BullMQ queues per stage:
 - `persist_records` — upsert borrower/application read models into Postgres
 
 Each job payload MUST include:
+
+#### Example: `document.available` job payload
+
+The Adapter emits a `document.available` event and enqueues it onto the BullMQ queue named `document_available`.
+
+```json
+{
+  "event_type": "document.available",
+  "correlation_id": "01J4Z0D0Q9QW4B7Y6K8J2H3R1M",
+  "document_id": "sha256:4e9f6c6b2b6f7b2e5f3d0a8f0c8b2b4b7b9e3a1c6d2e1f0a9b8c7d6e5f4a3b2c",
+  "raw_uri": "file://object-store/raw/fixture_source/4e9f6c6b2b6f7b2e5f3d0a8f0c8b2b4b7b9e3a1c6d2e1f0a9b8c7d6e5f4a3b2c.pdf",
+  "source_system": "fixture_source",
+  "source_doc_id": "doc_001",
+  "source_filename": "Closing_Disclosure.pdf",
+  "discovered_at": "2026-01-31T22:00:00Z"
+}
+```
+
 - `correlation_id` (unique per processing attempt)
 - `document_id` (stable content hash; used for dedupe/idempotency)
 - `raw_uri`
