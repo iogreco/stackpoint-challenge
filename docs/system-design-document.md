@@ -171,18 +171,18 @@ flowchart LR
   end
 
   subgraph External
-    LLM[LLM Provider\n(text) + (PDF/vision)]
+    LLM["LLM Provider (text) + (PDF/vision)"]
   end
 
   Client -->|POST /ingest| Ingest
   Ingest -->|store raw pdf| FS
   Ingest -->|enqueue| Q1
   Q1 --> TextW
-  TextW -->|LLM (text)| LLM
+  TextW -->|LLM text| LLM
   TextW -->|complete? yes| Q3
   TextW -->|complete? no| Q2
   Q2 --> PdfW
-  PdfW -->|LLM (PDF)| LLM
+  PdfW -->|LLM PDF| LLM
   PdfW --> Q3
   Q3 --> Persist
   Persist --> PG
