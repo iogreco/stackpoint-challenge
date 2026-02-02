@@ -4,6 +4,7 @@
  * Calls OpenAI vision API for PDF fallback extraction.
  * Uses OpenAI's Structured Outputs feature to ensure schema compliance.
  */
+/// <reference types="node" />
 
 import fs from 'fs';
 import OpenAI from 'openai';
@@ -184,12 +185,32 @@ const EXTRACTION_SCHEMA = {
       evidence: {
         type: 'object',
         additionalProperties: false,
-        required: ['document_id', 'source_filename', 'page_number', 'quote'],
+        required: ['document_id', 'source_filename', 'page_number', 'quote', 'evidence_source_context'],
         properties: {
           document_id: { type: 'string', description: 'Use the exact document_id from input' },
           source_filename: { type: 'string', description: 'Use the exact source_filename from input' },
           page_number: { type: 'integer', description: '1-indexed page number' },
           quote: { type: 'string', description: 'Short quote (max 300 chars) supporting the extracted value' },
+          evidence_source_context: {
+            type: 'string',
+            enum: [
+              'tax_return_1040_taxpayer_address_block',
+              'w2_employee_address_block',
+              'closing_disclosure_borrower_section',
+              'bank_statement_account_holder_address_block',
+              'paystub_employee_info_block',
+              'paystub_header_employer_block',
+              'w2_employer_address_block',
+              'w2_wages_boxes_annual',
+              'tax_return_1040_schedule_c_net_profit',
+              'paystub_ytd_rate_of_pay',
+              'evoe_verification',
+              'letter_of_explanation',
+              'other',
+            ],
+            description:
+              'Where on the document this value came from. For addresses use an address context; for income use an income context. Use "other" only when unclear.',
+          },
         },
       },
       address_value: {
@@ -224,7 +245,7 @@ const EXTRACTION_SCHEMA = {
         properties: {
           source_type: {
             type: 'string',
-            enum: ['w2', 'paystub', 'tax_return_1040', 'schedule_c', 'bank_statement', 'other'],
+            enum: ['w2', 'paystub', 'evoe', 'tax_return_1040', 'schedule_c', 'bank_statement', 'other'],
           },
           employer: { type: 'string', description: 'Employer name, or empty string if not applicable' },
           period: {
@@ -284,6 +305,24 @@ EVIDENCE REQUIREMENTS:
 - Use the EXACT document_id and source_filename provided in the input
 - page_number is 1-indexed (first page is 1)
 - quote must be a short snippet (under 300 chars) that directly supports the extracted value
+- evidence_source_context: set from the table below based on where the value appears. Use "other" only when you cannot determine.
+
+EVIDENCE SOURCE CONTEXT (use these exact strings):
+For BORROWER ADDRESSES (borrower.addresses, borrower.zip):
+  tax_return_1040_taxpayer_address_block = Tax return (1040) taxpayer address block
+  w2_employee_address_block = W-2 employee address block
+  closing_disclosure_borrower_section = Closing Disclosure borrower section
+  bank_statement_account_holder_address_block = Bank statement account holder address block
+  paystub_employee_info_block = Paystub employee info block
+  paystub_header_employer_block = Paystub header / employer block (NOT borrower; low authority)
+  w2_employer_address_block = W-2 employer address block (NOT borrower; low authority)
+For INCOME (income_history):
+  w2_wages_boxes_annual = W-2 wages boxes (annual)
+  tax_return_1040_schedule_c_net_profit = 1040 / Schedule C net profit
+  paystub_ytd_rate_of_pay = Paystub YTD / rate-of-pay (with period)
+  evoe_verification = Verifications (EVOE)
+  letter_of_explanation = Free-text letters of explanation
+Use "other" only when the source does not match any of the above.
 
 DATA FORMATTING:
 - Names: "First Last" format

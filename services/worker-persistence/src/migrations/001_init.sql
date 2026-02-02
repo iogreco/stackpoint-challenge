@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS borrower_addresses (
     document_id VARCHAR(128) NOT NULL REFERENCES documents(document_id),
     page_number INTEGER NOT NULL,
     quote VARCHAR(300) NOT NULL,
+    evidence_source_context VARCHAR(64),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -96,7 +97,7 @@ CREATE INDEX IF NOT EXISTS idx_borrower_addresses_borrower ON borrower_addresses
 CREATE TABLE IF NOT EXISTS borrower_incomes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     borrower_id UUID NOT NULL REFERENCES borrowers(borrower_id) ON DELETE CASCADE,
-    source_type VARCHAR(32) NOT NULL CHECK (source_type IN ('w2', 'paystub', 'tax_return_1040', 'schedule_c', 'bank_statement', 'other')),
+    source_type VARCHAR(32) NOT NULL CHECK (source_type IN ('w2', 'paystub', 'evoe', 'tax_return_1040', 'schedule_c', 'bank_statement', 'other')),
     employer VARCHAR(255),
     period_year INTEGER NOT NULL,
     amount DECIMAL(15, 2) NOT NULL,
@@ -105,6 +106,7 @@ CREATE TABLE IF NOT EXISTS borrower_incomes (
     document_id VARCHAR(128) NOT NULL REFERENCES documents(document_id),
     page_number INTEGER NOT NULL,
     quote VARCHAR(300) NOT NULL,
+    evidence_source_context VARCHAR(64),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -119,6 +121,7 @@ CREATE TABLE IF NOT EXISTS borrower_identifiers (
     document_id VARCHAR(128) NOT NULL REFERENCES documents(document_id),
     page_number INTEGER NOT NULL,
     quote VARCHAR(300) NOT NULL,
+    evidence_source_context VARCHAR(64),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -141,6 +144,7 @@ CREATE TABLE IF NOT EXISTS application_addresses (
     document_id VARCHAR(128) NOT NULL REFERENCES documents(document_id),
     page_number INTEGER NOT NULL,
     quote VARCHAR(300) NOT NULL,
+    evidence_source_context VARCHAR(64),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -155,6 +159,7 @@ CREATE TABLE IF NOT EXISTS application_identifiers (
     document_id VARCHAR(128) NOT NULL REFERENCES documents(document_id),
     page_number INTEGER NOT NULL,
     quote VARCHAR(300) NOT NULL,
+    evidence_source_context VARCHAR(64),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -168,6 +173,7 @@ CREATE TABLE IF NOT EXISTS application_party_evidence (
     document_id VARCHAR(128) NOT NULL REFERENCES documents(document_id),
     page_number INTEGER NOT NULL,
     quote VARCHAR(300) NOT NULL,
+    evidence_source_context VARCHAR(64),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

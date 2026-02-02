@@ -75,52 +75,116 @@ Once the payload borrower is resolved to an existing borrower (or a new one), **
 
 ### 3.3 Income history
 
-- **Same income**: Two income entries are the **same** if they refer to the same employer and same period (e.g., same year), and optionally same source_type (e.g., w2). Exact rule (e.g., employer + period_year) is implementation-defined.
-- **Rule (income merge)**:
-  - For each income in the payload, check whether there exists an existing income for this borrower that is "same" (employer + period, and any other defined keys).
-  - If **same**: do not create a new income; **add the incoming evidence** to that existing income. Optionally update amount/frequency if the incoming value is more authoritative (e.g., from a primary doc).
-  - If **no same**: add a **new** income with the incoming value and its evidence.
+Income history needs **stricter identity** than “employer + year” to avoid collisions (and to avoid incorrectly merging values that happen to share an employer name).
+
+#### 3.3.1 Income identity key (required)
+
+Define a deterministic **income_identity_key** for every income entry. At minimum:
+
+- **source_type** *(required)*: e.g., `w2`, `paystub`, `evoe`, `schedule_c`, `tax_return_1040`, `bank_statement` (or whatever your system uses).
+- **employer_norm** *(required when applicable)*: normalized employer name (trim, uppercase, collapse whitespace, strip punctuation, normalize common suffixes like INC/LLC if you do that elsewhere).
+  - For self-employment, use the business name (e.g., Schedule C business name) or a stable label like `SELF_EMPLOYED:<business_norm>`.
+- **period_key** *(required)*: one of:
+  - `period_start|period_end` when you have explicit dates (preferred), else
+  - `period_year` when the doc is annual (e.g., W-2, 1040), else
+  - `as_of_date` for point-in-time verifications (if applicable).
+- **income_kind** *(recommended)*: e.g., `wages_salary`, `bonus_commission`, `self_employment_net_profit`, `other`.
+
+> If any required component is missing (e.g., employer absent and you cannot infer self-employment context), treat the income entry as **non-dedupable** and store it as a separate entry (still with evidence), rather than risking a bad merge.
+
+#### 3.3.2 Same income (dedupe rule)
+
+Two income entries are the **same** iff:
+
+- `source_type` matches *(mandatory)*, AND
+- `employer_norm` matches *(when applicable)*, AND
+- `period_key` matches.
+
+**Important:** `source_type` is no longer “optional.”  
+If you want to reconcile across sources (e.g., W-2 wages vs EVOE annualized salary), do that as a **separate, explicit reconciliation step** (out of scope here) rather than merging them into one income record.
+
+#### 3.3.3 Rule (income merge)
+
+For each income in the payload:
+
+1. Compute `income_identity_key`.
+2. Look for an existing income entry for this borrower with the same `income_identity_key`.
+3. If **same**:
+   - Do **not** create a new income entry.
+   - Add the incoming **evidence** to the existing income entry.
+   - If the incoming amount differs, keep the existing canonical amount unless the incoming value is more authoritative (see Confidence Scoring weights in §4), in which case update the canonical amount and retain prior value in evidence/provenance.
+4. If **no same**:
+   - Add a **new** income entry with its value and evidence.
 
 ---
-
-## 4. Confidence scoring
+## 4. Confidence scoring (with document-type weighting)
 
 After merge, each **element** (each address, each identifier, each income record) is assigned a **confidence level** so that consumers can prioritize (e.g., show HIGH first, or use only HIGH for critical decisions).
 
-### 4.1 Definitions (per element, per type)
+This version introduces **document-type weighting** so that repeated low-authority mentions do not overpower fewer high-authority mentions.
 
-- **Element**: One logical address, or one logical identifier (e.g., one SSN), or one logical income record, for a given borrower.
-- **Same type**: For identifiers, "same type" means all identifiers of that kind (e.g., all SSNs for this borrower). For addresses, "same type" means all addresses for this borrower. For income, "same type" means all income entries for this borrower.
+### 4.1 Definitions (per element, per conflict domain)
 
-- **n_favorable** (for this element):  
-  Number of **evidences** attached to **this** element (after merge).
+- **Element**: One logical address, one logical identifier (e.g., one SSN), or one logical income record (as defined by `income_identity_key`), for a given borrower.
 
-- **n_unfavorable** (for this element):  
-  Number of **evidences** attached to **all other** elements of the **same type** for this borrower.  
-  So: evidence that supports a *different* value of the same type (e.g., a different SSN, a different address) counts as unfavorable for this element.
+- **Conflict domain**: The set of elements that can **compete** with each other.
+  - For **identifiers**: all identifiers of the same identifier type (e.g., all SSNs).
+  - For **addresses**: all addresses of the same address role/type (if you have roles), otherwise all addresses.
+  - For **income**: all income elements with the same `income_identity_key` components (same employer/period/source). Incomes for different employers/periods do **not** compete.
 
-### 4.2 Interpretation
+- **Evidence**: A provenance reference supporting a value (document_id + location + optional context).
 
-- **Favorable**: Evidence supporting *this* value.
-- **Unfavorable**: Evidence supporting a *competing* value of the same type. So the more evidence there is for other SSNs (or other addresses, or other income entries), the higher n_unfavorable for this element, and the lower its confidence.
+- **Evidence weight**: `w(evidence) ∈ ℝ+` (typically 0.0–3.0), derived from:
+  - document type (W-2 vs paystub vs 1040 vs bank statement…),
+  - field relevance (e.g., “employee address block” vs “employer header”),
+  - optional context hints (nearby labels like “Employer”, “Employee”, “Borrower”, etc., if captured).
+
+### 4.2 Weighted favorable and unfavorable support
+
+For an element `E` in its conflict domain:
+
+- **favorable_weight(E)**:  
+  `Σ w(evidence)` for all evidence attached to `E`.
+
+- **unfavorable_weight(E)**:  
+  `Σ w(evidence)` for all evidence attached to *other* competing elements in the same conflict domain.
 
 ### 4.3 Score and confidence level
 
-- **Score** (for this element):  
-  `score = n_favorable / n_unfavorable`  
-  If `n_unfavorable == 0`, treat as "no competing evidence"; e.g. `score = n_favorable` or use a cap so that confidence is HIGH when there is no competing evidence. Implementation may use `score = n_favorable / max(n_unfavorable, 1)` to avoid division by zero.
+- **Score** (for element `E`):  
+  `score(E) = favorable_weight(E) / max(unfavorable_weight(E), 1e-6)`
 
-- **Confidence level**:
+- **Confidence level** (default thresholds):
   - **HIGH**:   `score > 1`
-  - **MEDIUM**: `score == 1`
+  - **MEDIUM**: `score == 1` (or within a small epsilon)
   - **LOW**:    `score < 1`
 
-- **Rationale**: An element with more supporting evidence than competing evidence (score > 1) is HIGH; equal evidence (score == 1) is MEDIUM; less supporting than competing (score < 1) is LOW. No need to label evidence as "from EVOE" or "from W2"—the split between "this element’s evidence" vs "other elements’ evidence" carries the signal.
+Implementations may choose slightly different thresholds (e.g., HIGH if `score ≥ 1.25`) but must remain deterministic.
 
-### 4.4 Edge cases
+### 4.4 Suggested default weighting table (starter policy)
 
-- **Single element of its type**: e.g., borrower has only one SSN. Then n_unfavorable = 0; treat score as HIGH (or use `n_favorable / 1` so score = n_favorable, and define HIGH as score >= 1 if desired).
-- **Many elements, one with most evidence**: The element with the most evidences gets the highest score (largest n_favorable, smallest n_unfavorable sum from others); others get lower scores and may be LOW.
+This is a **starter** policy for the loan-doc corpus; store it as config (e.g., YAML/JSON) and adjust as you observe failure modes.
+
+| Field / Element | Evidence source context | Weight | Rationale |
+|---|---:|---|
+| Borrower address | Tax return (1040) taxpayer address block | 3.0 | High authority, borrower-centric |
+| Borrower address | W-2 employee address block | 3.0 | High authority, explicitly employee |
+| Borrower address | Closing Disclosure borrower section | 3.0 | High authority, borrower-centric |
+| Borrower address | Bank statement account holder address block | 2.0 | Strong but sometimes mailing/PO box |
+| Borrower address | Paystub employee info block | 2.0 | Usually borrower address if present |
+| Borrower address | Paystub header / employer block | 0.25 | Common source of confusion |
+| Borrower address | W-2 employer address block | 0.0–0.25 | Not borrower; weight near-zero unless explicitly labeled otherwise |
+| Income amount | W-2 wages boxes (annual) | 3.0 | Strong for wages for that year |
+| Income amount | 1040 / Schedule C net profit | 3.0 | Strong for self-employment for that year |
+| Income amount | Paystub YTD / rate-of-pay (with period) | 2.0 | Useful but can be partial/periodic |
+| Income amount | Verifications (EVOE) | 2.0 | Generally good but can be derived/annualized |
+| Income amount | Free-text letters of explanation | 0.5–1.0 | Self-reported; keep but low authority |
+
+### 4.5 Edge cases
+
+- **Single element in domain**: If there is only one element in the conflict domain, `unfavorable_weight = 0`; score will be very large → treat as HIGH (subject to minimum-evidence rules if you add them).
+- **Missing context hints**: If you cannot tell “employer block” vs “employee block,” use only doc-type baseline weights (and keep them conservative).
+- **Many low-weight duplicates**: Weighted scoring prevents many repeated low-weight evidences from dominating fewer high-weight evidences.
 
 ---
 
@@ -145,5 +209,5 @@ After merge, each **element** (each address, each identifier, each income record
 | **Match decision** | Best candidate above threshold (e.g., ≥1 strong or ≥2 medium) → same borrower; else new borrower. |
 | **Address merge** | Same address → add evidence to existing; else new address. |
 | **Identifier merge** | Same type + overlap (e.g., SSN overlap) → add evidence, keep most complete value; else new identifier. |
-| **Income merge** | Same employer + period → add evidence to existing; else new income. |
-| **Confidence** | n_favorable = evidences on this element; n_unfavorable = evidences on all other elements of same type; score = n_favorable / max(n_unfavorable, 1); HIGH if score > 1, MEDIUM if score = 1, LOW if score < 1. |
+| **Income merge** | Same `income_identity_key` (mandatory `source_type` + employer_norm + period_key) → add evidence to existing; else new income. |
+| **Confidence** | Weighted evidence scoring within each conflict domain: favorable_weight vs unfavorable_weight; score = favorable_weight / max(unfavorable_weight, ε); HIGH if score > 1, MEDIUM ~ 1, LOW < 1. |

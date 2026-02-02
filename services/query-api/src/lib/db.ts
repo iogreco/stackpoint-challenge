@@ -11,6 +11,7 @@ import {
   dbQueryDurationHistogram,
   validateBorrower,
   validateApplication,
+  getEvidenceWeight,
   type BorrowerRecord,
   type ApplicationRecord,
   type BorrowerAddress,
@@ -22,6 +23,8 @@ import {
   type ApplicationAddress,
   type ApplicationIdentifier,
   type Evidence,
+  type EvidenceSourceContext,
+  type ConfidenceLevel,
 } from '@stackpoint/shared';
 
 const pool = new Pool({
@@ -29,6 +32,31 @@ const pool = new Pool({
   max: 20,
   idleTimeoutMillis: 30000,
 });
+
+const EPSILON = 1e-6;
+
+/** Compute confidence level from favorable and unfavorable evidence weights (spec §4.3). */
+function confidenceLevel(favorable: number, unfavorable: number): ConfidenceLevel {
+  const score = favorable / Math.max(unfavorable, EPSILON);
+  if (score > 1) return 'HIGH';
+  if (score >= 1 - 1e-4 && score <= 1 + 1e-4) return 'MEDIUM';
+  return 'LOW';
+}
+
+function normAddrKey(row: { street1?: string; city?: string; state?: string; zip?: string }): string {
+  const s = (v: string | null | undefined) => (v ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
+  return [s(row.street1), s(row.city), s(row.state), s(row.zip)].join('|');
+}
+
+function normIncomeKey(row: { source_type: string; employer?: string; period_year: number }): string {
+  const e = (row.employer ?? '').trim().toUpperCase().replace(/\s+/g, ' ');
+  return `${row.source_type}|${e}|${row.period_year}`;
+}
+
+function normIdKey(row: { identifier_type: string; identifier_value: string }): string {
+  const v = (row.identifier_value ?? '').trim().replace(/[\s-]+/g, '');
+  return `${row.identifier_type}|${v}`;
+}
 
 /**
  * Get borrower by ID
@@ -174,10 +202,10 @@ export async function getApplicationByLoanNumber(
 async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
   const borrowerId = borrower.borrower_id;
 
-  // Get addresses with evidence
+  // Get addresses with evidence; group by logical address and compute confidence
   const addressesResult = await pool.query(
     `SELECT ba.address_type, ba.street1, ba.street2, ba.city, ba.state, ba.zip,
-            d.document_id, d.source_filename, ba.page_number, ba.quote
+            d.document_id, d.source_filename, ba.page_number, ba.quote, ba.evidence_source_context
      FROM borrower_addresses ba
      JOIN documents d ON ba.document_id = d.document_id
      WHERE ba.borrower_id = $1
@@ -185,27 +213,58 @@ async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
     [borrowerId]
   );
 
-  const addresses: BorrowerAddress[] = addressesResult.rows.map((row) => ({
-    type: row.address_type,
-    street1: row.street1,
-    street2: row.street2,
-    city: row.city,
-    state: row.state,
-    zip: row.zip,
-    evidence: [
-      {
-        document_id: row.document_id,
-        source_filename: row.source_filename,
-        page_number: row.page_number,
-        quote: row.quote,
-      },
-    ],
-  }));
+  const addressGroups = new Map<
+    string,
+    { type: string; street1?: string; street2?: string; city?: string; state?: string; zip: string; evidence: Evidence[] }
+  >();
+  for (const row of addressesResult.rows) {
+    const key = row.address_type + '|' + normAddrKey(row);
+    const ev: Evidence = {
+      document_id: row.document_id,
+      source_filename: row.source_filename,
+      page_number: row.page_number,
+      quote: row.quote,
+      ...(row.evidence_source_context != null && { evidence_source_context: row.evidence_source_context as EvidenceSourceContext }),
+    };
+    if (!addressGroups.has(key)) {
+      addressGroups.set(key, {
+        type: row.address_type,
+        street1: row.street1,
+        street2: row.street2,
+        city: row.city,
+        state: row.state,
+        zip: row.zip,
+        evidence: [],
+      });
+    }
+    addressGroups.get(key)!.evidence.push(ev);
+  }
+  const addressFavorable = new Map<string, number>();
+  for (const [key, g] of addressGroups) {
+    const w = g.evidence.reduce((s, e) => s + getEvidenceWeight(e.evidence_source_context), 0);
+    addressFavorable.set(key, w);
+  }
+  const totalAddressWeight = [...addressFavorable.values()].reduce((a, b) => a + b, 0);
+  const addresses: BorrowerAddress[] = [...addressGroups.entries()].map(([key, g]) => {
+    const favorable = addressFavorable.get(key) ?? 0;
+    const unfavorable = totalAddressWeight - favorable;
+    const confidence = confidenceLevel(favorable, unfavorable);
+    return {
+      type: g.type as BorrowerAddress['type'],
+      street1: g.street1,
+      street2: g.street2,
+      city: g.city,
+      state: g.state,
+      zip: g.zip,
+      evidence: g.evidence,
+      confidence,
+    };
+  });
 
-  // Get income history with evidence
+  // Get income history with evidence; group by income_identity_key and compute confidence
   const incomesResult = await pool.query(
     `SELECT bi.source_type, bi.employer, bi.period_year, bi.amount, bi.currency, bi.frequency,
-            d.document_id, d.source_filename, bi.page_number, bi.quote
+            d.document_id, d.source_filename, bi.page_number, bi.quote, bi.evidence_source_context
      FROM borrower_incomes bi
      JOIN documents d ON bi.document_id = d.document_id
      WHERE bi.borrower_id = $1
@@ -213,27 +272,59 @@ async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
     [borrowerId]
   );
 
-  const income_history: BorrowerIncome[] = incomesResult.rows.map((row) => ({
-    source_type: row.source_type,
-    employer: row.employer,
-    period_year: row.period_year,
-    amount: parseFloat(row.amount),
-    currency: row.currency,
-    frequency: row.frequency,
-    evidence: [
-      {
-        document_id: row.document_id,
-        source_filename: row.source_filename,
-        page_number: row.page_number,
-        quote: row.quote,
-      },
-    ],
-  }));
+  const incomeGroups = new Map<
+    string,
+    {
+      source_type: string;
+      employer?: string;
+      period_year: number;
+      amount: number;
+      currency: string;
+      frequency: string;
+      evidence: Evidence[];
+    }
+  >();
+  for (const row of incomesResult.rows) {
+    const key = normIncomeKey(row);
+    const ev: Evidence = {
+      document_id: row.document_id,
+      source_filename: row.source_filename,
+      page_number: row.page_number,
+      quote: row.quote,
+      ...(row.evidence_source_context != null && { evidence_source_context: row.evidence_source_context as EvidenceSourceContext }),
+    };
+    if (!incomeGroups.has(key)) {
+      incomeGroups.set(key, {
+        source_type: row.source_type,
+        employer: row.employer,
+        period_year: row.period_year,
+        amount: parseFloat(row.amount),
+        currency: row.currency,
+        frequency: row.frequency ?? 'unknown',
+        evidence: [],
+      });
+    }
+    incomeGroups.get(key)!.evidence.push(ev);
+  }
+  const income_history: BorrowerIncome[] = [...incomeGroups.values()].map((g) => {
+    const favorable = g.evidence.reduce((s, e) => s + getEvidenceWeight(e.evidence_source_context), 0);
+    const confidence = confidenceLevel(favorable, 0);
+    return {
+      source_type: g.source_type as BorrowerIncome['source_type'],
+      employer: g.employer,
+      period_year: g.period_year,
+      amount: g.amount,
+      currency: g.currency,
+      frequency: g.frequency as BorrowerIncome['frequency'],
+      evidence: g.evidence,
+      confidence,
+    };
+  });
 
-  // Get identifiers with evidence
+  // Get identifiers with evidence; group by type + value and compute confidence (conflict domain = same type)
   const identifiersResult = await pool.query(
     `SELECT bi.identifier_type, bi.identifier_value,
-            d.document_id, d.source_filename, bi.page_number, bi.quote
+            d.document_id, d.source_filename, bi.page_number, bi.quote, bi.evidence_source_context
      FROM borrower_identifiers bi
      JOIN documents d ON bi.document_id = d.document_id
      WHERE bi.borrower_id = $1
@@ -241,23 +332,49 @@ async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
     [borrowerId]
   );
 
-  const identifiers: BorrowerIdentifier[] = identifiersResult.rows.map((row) => ({
-    type: row.identifier_type,
-    value: row.identifier_value,
-    evidence: [
-      {
-        document_id: row.document_id,
-        source_filename: row.source_filename,
-        page_number: row.page_number,
-        quote: row.quote,
-      },
-    ],
-  }));
+  const identifierGroups = new Map<
+    string,
+    { type: string; value: string; evidence: Evidence[] }
+  >();
+  for (const row of identifiersResult.rows) {
+    const key = normIdKey(row);
+    const ev: Evidence = {
+      document_id: row.document_id,
+      source_filename: row.source_filename,
+      page_number: row.page_number,
+      quote: row.quote,
+      ...(row.evidence_source_context != null && { evidence_source_context: row.evidence_source_context as EvidenceSourceContext }),
+    };
+    if (!identifierGroups.has(key)) {
+      identifierGroups.set(key, { type: row.identifier_type, value: row.identifier_value, evidence: [] });
+    }
+    identifierGroups.get(key)!.evidence.push(ev);
+  }
+  const identifierFavorable = new Map<string, number>();
+  const weightByType = new Map<string, number>();
+  for (const [key, g] of identifierGroups) {
+    const w = g.evidence.reduce((s, e) => s + getEvidenceWeight(e.evidence_source_context), 0);
+    identifierFavorable.set(key, w);
+    const t = g.type;
+    weightByType.set(t, (weightByType.get(t) ?? 0) + w);
+  }
+  const identifiers: BorrowerIdentifier[] = [...identifierGroups.entries()].map(([key, g]) => {
+    const favorable = identifierFavorable.get(key) ?? 0;
+    const typeTotal = weightByType.get(g.type) ?? 0;
+    const unfavorable = typeTotal - favorable;
+    const confidence = confidenceLevel(favorable, unfavorable);
+    return {
+      type: g.type as BorrowerIdentifier['type'],
+      value: g.value,
+      evidence: g.evidence,
+      confidence,
+    };
+  });
 
   // Get application links with evidence
   const applicationsResult = await pool.query(
     `SELECT a.application_id, a.loan_number, ap.role,
-            ape.document_id, d.source_filename, ape.page_number, ape.quote
+            ape.document_id, d.source_filename, ape.page_number, ape.quote, ape.evidence_source_context
      FROM application_parties ap
      JOIN applications a ON ap.application_id = a.application_id
      LEFT JOIN application_party_evidence ape ON ap.application_id = ape.application_id AND ap.borrower_id = ape.borrower_id
@@ -278,6 +395,7 @@ async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
             source_filename: row.source_filename,
             page_number: row.page_number,
             quote: row.quote,
+            ...(row.evidence_source_context != null && { evidence_source_context: row.evidence_source_context }),
           },
         ]
       : [],
@@ -326,38 +444,54 @@ async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
 async function assembleApplicationRecord(application: any): Promise<ApplicationRecord> {
   const applicationId = application.application_id;
 
-  // Get property address with evidence
+  // Get property address with evidence; group by logical address and compute confidence
   const addressResult = await pool.query(
     `SELECT aa.street1, aa.street2, aa.city, aa.state, aa.zip,
-            d.document_id, d.source_filename, aa.page_number, aa.quote
+            d.document_id, d.source_filename, aa.page_number, aa.quote, aa.evidence_source_context
      FROM application_addresses aa
      JOIN documents d ON aa.document_id = d.document_id
      WHERE aa.application_id = $1
-     LIMIT 1`,
+     ORDER BY aa.zip`,
     [applicationId]
   );
 
   let property_address: ApplicationAddress;
   if (addressResult.rows.length > 0) {
-    const row = addressResult.rows[0];
+    const addrGroups = new Map<string, { street1?: string; street2?: string; city?: string; state?: string; zip: string; evidence: Evidence[] }>();
+    for (const row of addressResult.rows) {
+      const key = normAddrKey(row);
+      const ev: Evidence = {
+        document_id: row.document_id,
+        source_filename: row.source_filename,
+        page_number: row.page_number,
+        quote: row.quote,
+        ...(row.evidence_source_context != null && { evidence_source_context: row.evidence_source_context as EvidenceSourceContext }),
+      };
+      if (!addrGroups.has(key)) {
+        addrGroups.set(key, {
+          street1: row.street1,
+          street2: row.street2,
+          city: row.city,
+          state: row.state,
+          zip: row.zip,
+          evidence: [],
+        });
+      }
+      addrGroups.get(key)!.evidence.push(ev);
+    }
+    const first = [...addrGroups.values()][0];
+    const favorable = first.evidence.reduce((s, e) => s + getEvidenceWeight(e.evidence_source_context), 0);
     property_address = {
       type: 'property',
-      street1: row.street1,
-      street2: row.street2,
-      city: row.city,
-      state: row.state,
-      zip: row.zip,
-      evidence: [
-        {
-          document_id: row.document_id,
-          source_filename: row.source_filename,
-          page_number: row.page_number,
-          quote: row.quote,
-        },
-      ],
+      street1: first.street1,
+      street2: first.street2,
+      city: first.city,
+      state: first.state,
+      zip: first.zip,
+      evidence: first.evidence,
+      confidence: confidenceLevel(favorable, 0),
     };
   } else {
-    // Fallback - no address found (should not happen in valid data)
     property_address = {
       type: 'property',
       zip: '00000',
@@ -381,10 +515,10 @@ async function assembleApplicationRecord(application: any): Promise<ApplicationR
     role: row.role,
   }));
 
-  // Get identifiers with evidence
+  // Get identifiers with evidence; group by type+value and compute confidence
   const identifiersResult = await pool.query(
     `SELECT ai.identifier_type, ai.identifier_value,
-            d.document_id, d.source_filename, ai.page_number, ai.quote
+            d.document_id, d.source_filename, ai.page_number, ai.quote, ai.evidence_source_context
      FROM application_identifiers ai
      JOIN documents d ON ai.document_id = d.document_id
      WHERE ai.application_id = $1
@@ -392,18 +526,39 @@ async function assembleApplicationRecord(application: any): Promise<ApplicationR
     [applicationId]
   );
 
-  const identifiers: ApplicationIdentifier[] = identifiersResult.rows.map((row) => ({
-    type: row.identifier_type,
-    value: row.identifier_value,
-    evidence: [
-      {
-        document_id: row.document_id,
-        source_filename: row.source_filename,
-        page_number: row.page_number,
-        quote: row.quote,
-      },
-    ],
-  }));
+  const appIdGroups = new Map<string, { type: string; value: string; evidence: Evidence[] }>();
+  for (const row of identifiersResult.rows) {
+    const key = normIdKey(row);
+    const ev: Evidence = {
+      document_id: row.document_id,
+      source_filename: row.source_filename,
+      page_number: row.page_number,
+      quote: row.quote,
+      ...(row.evidence_source_context != null && { evidence_source_context: row.evidence_source_context as EvidenceSourceContext }),
+    };
+    if (!appIdGroups.has(key)) {
+      appIdGroups.set(key, { type: row.identifier_type, value: row.identifier_value, evidence: [] });
+    }
+    appIdGroups.get(key)!.evidence.push(ev);
+  }
+  const appIdFavorable = new Map<string, number>();
+  const appWeightByType = new Map<string, number>();
+  for (const [key, g] of appIdGroups) {
+    const w = g.evidence.reduce((s, e) => s + getEvidenceWeight(e.evidence_source_context), 0);
+    appIdFavorable.set(key, w);
+    appWeightByType.set(g.type, (appWeightByType.get(g.type) ?? 0) + w);
+  }
+  const identifiers: ApplicationIdentifier[] = [...appIdGroups.entries()].map(([key, g]) => {
+    const favorable = appIdFavorable.get(key) ?? 0;
+    const typeTotal = appWeightByType.get(g.type) ?? 0;
+    const confidence = confidenceLevel(favorable, typeTotal - favorable);
+    return {
+      type: g.type as ApplicationIdentifier['type'],
+      value: g.value,
+      evidence: g.evidence,
+      confidence,
+    };
+  });
 
   // Get documents
   const documentsResult = await pool.query(

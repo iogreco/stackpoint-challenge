@@ -17,9 +17,11 @@
           "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
           "source_filename": "Paystub- John Homeowner (Current).pdf",
           "page_number": 1,
-          "quote": "John Homeowner\n175 13th Street\nWashington, DC 20013"
+          "quote": "John Homeowner\n175 13th Street\nWashington, DC 20013",
+          "evidence_source_context": "paystub_employee_info_block"
         }
-      ]
+      ],
+      "confidence": "HIGH"
     },
     {
       "type": "property",
@@ -32,9 +34,11 @@
           "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
           "source_filename": "Closing_Disclosure.pdf",
           "page_number": 1,
-          "quote": "/2025 Closing Date: 07/25/2025 Disbursement Date: 07/29/2025 Settlement Agent: ABC Title Company File #: 123456789 Property: 999 Test Place, Washington, DC 20013 Sale Price: $350,000 Transaction Information Borrower: John Homeowner and Mar"
+          "quote": "/2025 Closing Date: 07/25/2025 Disbursement Date: 07/29/2025 Settlement Agent: ABC Title Company File #: 123456789 Property: 999 Test Place, Washington, DC 20013 Sale Price: $350,000 Transaction Information Borrower: John Homeowner and Mar",
+          "evidence_source_context": "closing_disclosure_borrower_section"
         }
-      ]
+      ],
+      "confidence": "HIGH"
     }
   ],
   "income_history": [
@@ -50,9 +54,11 @@
           "document_id": "bd89e0ec8427983743b99802e39df0b9ca4fa196d2edb319bdd9bd0905718df1",
           "source_filename": "W2 2024- John Homeowner.pdf",
           "page_number": 1,
-          "quote": "0 Employee Reference Copy Wage and Tax Statement 117040.19 14980.17 121790.22 7550.98 999-40-5000 Sample Doc"
+          "quote": "0 Employee Reference Copy Wage and Tax Statement 117040.19 14980.17 121790.22 7550.98 999-40-5000 Sample Doc",
+          "evidence_source_context": "w2_wages_boxes_annual"
         }
-      ]
+      ],
+      "confidence": "HIGH"
     },
     {
       "source_type": "paystub",
@@ -66,9 +72,11 @@
           "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
           "source_filename": "Paystub- John Homeowner (Current).pdf",
           "page_number": 1,
-          "quote": "rrent YTD Bonus HSA 50.00 450.00 - Total Work Hrs 80.00 Gross Pay 4,900.00 44,100.00 Basis of Pay: Salary Deductions Statutory Federal"
+          "quote": "rrent YTD Bonus HSA 50.00 450.00 - Total Work Hrs 80.00 Gross Pay 4,900.00 44,100.00 Basis of Pay: Salary Deductions Statutory Federal",
+          "evidence_source_context": "paystub_ytd_rate_of_pay"
         }
-      ]
+      ],
+      "confidence": "HIGH"
     }
   ],
   "identifiers": [
@@ -80,9 +88,11 @@
           "document_id": "bd89e0ec8427983743b99802e39df0b9ca4fa196d2edb319bdd9bd0905718df1",
           "source_filename": "W2 2024- John Homeowner.pdf",
           "page_number": 1,
-          "quote": "x Statement 117040.19 14980.17 121790.22 7550.98 999-40-5000 Sample Document-For Demo Purposes Only \u00a9 2024 Int"
+          "quote": "x Statement 117040.19 14980.17 121790.22 7550.98 999-40-5000 Sample Document-For Demo Purposes Only \u00a9 2024 Int",
+          "evidence_source_context": "other"
         }
-      ]
+      ],
+      "confidence": "HIGH"
     },
     {
       "type": "account_number",
@@ -92,9 +102,11 @@
           "document_id": "151c6e3d9ea91cab703b1ca44daa586e7d5a5c4e092d49da6cb41afbb14ba40c",
           "source_filename": "Checking - John Mary Homeowner (Current).pdf",
           "page_number": 1,
-          "quote": "ACCOUNT STATEMENT Account Number: 123456789 Statement Period Start: 4/1/2025 Statement Period End: 4/30/2025 Customer Servi"
+          "quote": "ACCOUNT STATEMENT Account Number: 123456789 Statement Period Start: 4/1/2025 Statement Period End: 4/30/2025 Customer Servi",
+          "evidence_source_context": "other"
         }
-      ]
+      ],
+      "confidence": "HIGH"
     },
     {
       "type": "loan_number",
@@ -104,9 +116,11 @@
           "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
           "source_filename": "Closing_Disclosure.pdf",
           "page_number": 1,
-          "quote": "gage Company Loan Information Loan Term: 30 years Purpose: Purchase Product: Fixed Rate Loan Type: Conventional Loan ID #: TEST250700110 MIC #: 9876543210 Loan Terms Description Amount Can this amount increase after closing? Loan Amo"
+          "quote": "gage Company Loan Information Loan Term: 30 years Purpose: Purchase Product: Fixed Rate Loan Type: Conventional Loan ID #: TEST250700110 MIC #: 9876543210 Loan Terms Description Amount Can this amount increase after closing? Loan Amo",
+          "evidence_source_context": "other"
         }
-      ]
+      ],
+      "confidence": "HIGH"
     }
   ],
   "applications": [
@@ -119,7 +133,8 @@
           "document_id": "c1ff2dbaee8f1aba59a045cdbc3da91f9ab7394e70ebc9e319fba7e2428df517",
           "source_filename": "Closing_Disclosure.pdf",
           "page_number": 1,
-          "quote": "Transaction Information Borrower: John Homeowner and Mary Homeowner"
+          "quote": "Transaction Information Borrower: John Homeowner and Mary Homeowner",
+          "evidence_source_context": "other"
         }
       ]
     }

@@ -127,6 +127,33 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function stripEvidenceAndConfidence(obj: any): void {
+  for (const arr of [obj.addresses, obj.income_history, obj.identifiers, obj.applications]) {
+    if (Array.isArray(arr)) {
+      for (const item of arr) {
+        delete item.confidence;
+        if (Array.isArray(item.evidence)) {
+          for (const e of item.evidence) delete e.evidence_source_context;
+        }
+      }
+    }
+  }
+  if (obj.property_address) {
+    delete obj.property_address.confidence;
+    if (Array.isArray(obj.property_address.evidence)) {
+      for (const e of obj.property_address.evidence) delete e.evidence_source_context;
+    }
+  }
+  if (Array.isArray(obj.identifiers)) {
+    for (const item of obj.identifiers) {
+      delete item.confidence;
+      if (Array.isArray(item.evidence)) {
+        for (const e of item.evidence) delete e.evidence_source_context;
+      }
+    }
+  }
+}
+
 /**
  * Strip volatile fields from object for comparison
  */
@@ -144,6 +171,7 @@ export function stripVolatileFields(obj: any, type: 'borrower' | 'application' |
         delete doc.raw_uri;
       }
     }
+    stripEvidenceAndConfidence(copy);
   } else if (type === 'application') {
     delete copy.application_id;
     delete copy.updated_at;
@@ -154,6 +182,7 @@ export function stripVolatileFields(obj: any, type: 'borrower' | 'application' |
         delete doc.raw_uri;
       }
     }
+    stripEvidenceAndConfidence(copy);
   } else if (type === 'extraction') {
     delete copy.correlation_id;
     delete copy.created_at;

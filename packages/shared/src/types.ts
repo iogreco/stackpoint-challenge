@@ -8,11 +8,32 @@
 // Evidence & Provenance
 // ============================================================================
 
+/** Stable identifiers for evidence source context (maps to §4.4 weighting table). */
+export type EvidenceSourceContext =
+  // Address contexts
+  | 'tax_return_1040_taxpayer_address_block'
+  | 'w2_employee_address_block'
+  | 'closing_disclosure_borrower_section'
+  | 'bank_statement_account_holder_address_block'
+  | 'paystub_employee_info_block'
+  | 'paystub_header_employer_block'
+  | 'w2_employer_address_block'
+  // Income contexts
+  | 'w2_wages_boxes_annual'
+  | 'tax_return_1040_schedule_c_net_profit'
+  | 'paystub_ytd_rate_of_pay'
+  | 'evoe_verification'
+  | 'letter_of_explanation'
+  // Fallback when LLM cannot determine
+  | 'other';
+
 export interface Evidence {
   document_id: string;
   source_filename: string;
   page_number: number;
   quote: string;
+  /** Source context for confidence weighting (see matching-and-merge-spec §4.4). */
+  evidence_source_context?: EvidenceSourceContext;
 }
 
 export interface ValueWithEvidence<T> {
@@ -47,6 +68,7 @@ export interface AddressExtraction {
 export type IncomeSourceType =
   | 'w2'
   | 'paystub'
+  | 'evoe'
   | 'tax_return_1040'
   | 'schedule_c'
   | 'bank_statement'
@@ -181,6 +203,8 @@ export interface ExtractionResult {
 
 export type BorrowerStatus = 'COMPLETE' | 'PARTIAL';
 
+export type ConfidenceLevel = 'HIGH' | 'MEDIUM' | 'LOW';
+
 export interface BorrowerAddress {
   type: AddressType;
   street1?: string;
@@ -189,6 +213,7 @@ export interface BorrowerAddress {
   state?: string;
   zip: string;
   evidence: Evidence[];
+  confidence?: ConfidenceLevel;
 }
 
 export interface BorrowerIncome {
@@ -199,12 +224,14 @@ export interface BorrowerIncome {
   currency: string;
   frequency?: IncomeFrequency;
   evidence: Evidence[];
+  confidence?: ConfidenceLevel;
 }
 
 export interface BorrowerIdentifier {
   type: IdentifierType;
   value: string;
   evidence: Evidence[];
+  confidence?: ConfidenceLevel;
 }
 
 export interface ApplicationLink {
@@ -256,12 +283,14 @@ export interface ApplicationAddress {
   state?: string;
   zip: string;
   evidence: Evidence[];
+  confidence?: ConfidenceLevel;
 }
 
 export interface ApplicationIdentifier {
   type: IdentifierType;
   value: string;
   evidence: Evidence[];
+  confidence?: ConfidenceLevel;
 }
 
 export interface ApplicationRecord {

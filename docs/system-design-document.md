@@ -71,6 +71,7 @@ Given a corpus of heterogeneous **loan documents** (PDFs with varying formats), 
 4. **Scalable shape:** worker horizontal scaling and explicit backpressure controls.
 5. **Local operability:** runnable locally via Docker Compose with a load test harness.
 6. **Multi-party + provenance:** represent borrowers as individuals, link them under loan applications when present, and preserve per-field evidence.
+7. **LLM output sanitization:** Multi-party documents often include both borrower and employer information. The LLM can misassign PII (e.g., employer address → borrower address). The pipeline uses redundancy across documents plus deterministic matching/merge and weighted confidence scoring to discard or de-rank likely misattributions. See `docs/matching-and-merge-spec.md`.
 
 ### 1.3 Non-goals
 
@@ -267,10 +268,14 @@ The Adapter is the only component that performs **pull** integrations. Downstrea
 
 The persistence stage turns an `ExtractionResult` into durable read models.
 
-1. **Borrower matching**
-   - For each extracted borrower, compute a deterministic match key:
+1. **Borrower identity resolution + merge**
+   - Generate a **candidate set** using a coarse deterministic key (demo default):
      - `borrower_key = sha256(normalize(full_name) + "|" + normalize(zip))`
-   - This demo uses ZIP as the address join key (see §6). Production systems use full postal normalization and stronger identity resolution.
+   - Resolve matches and merge extracted facts using deterministic rules with:
+     - **document-type–weighted confidence scoring** (to reduce systematic misattribution, e.g., employer address appearing as borrower address)
+     - **strict income identity keys** to prevent collisions across representations (e.g., W-2 vs VOE vs paystub)
+   - Detailed matching/merge semantics (including scoring, tie-breaking, and income identity) are specified in `docs/matching-and-merge-spec.v2.md`.
+   - Note: ZIP-based keying is a simplification for this take-home. Production systems use full postal normalization plus stronger identifiers (SSN, loan/application IDs, verified account IDs).
 
 2. **Application / party-group handling (multi-party)**
    - If a **loan number** is present in the extraction payload, upsert an **Application** entity keyed by `loan_number`.
@@ -282,7 +287,7 @@ The persistence stage turns an `ExtractionResult` into durable read models.
      - upsert `borrowers` (one per borrower_key)
      - upsert `applications` (when loan number present)
      - upsert join rows `application_parties`
-     - upsert `borrower_incomes` (keyed by `(borrower_id, period_year, source_type, document_id)`)
+     - upsert `borrower_incomes` (keyed by `(borrower_id, income_identity_key, document_id)` where `income_identity_key` is derived from `(source_type, employer_key, period)`; see `docs/matching-and-merge-spec.v2.md`)
      - upsert `borrower_identifiers` (keyed by `(borrower_id, type, value, document_id)`)
      - upsert `documents` (keyed by `document_id`) and attach document references to borrower/application records
      - persist **evidence** rows (page + quote) for each extracted field/value
@@ -484,6 +489,18 @@ The pipeline defaults to text-only extraction and escalates to PDF+vision only w
 
 Because raw PDFs are stored content-addressed (`document_id = sha256(bytes)`), re-ingesting the same fixtures does not create unbounded growth in `object-store/`. Multiple ingestions of the same document produce different `correlation_id`s but point to the same `document_id`.
 
+
+### 6.4 Field attribution ambiguity and mitigation
+
+A recurring failure mode in unstructured extraction is **field attribution ambiguity**: a document can contain multiple “address-like” values for different parties (e.g., employer vs employee/borrower), and an LLM may occasionally assign the right value to the wrong entity or field.
+
+This system explicitly treats extracted values as **candidates**, then applies deterministic post-processing:
+- **Document-type–weighted confidence scoring** so repeated but lower-authority locations (e.g., employer address blocks) do not overpower higher-authority borrower-address evidence.
+- **Strict income identity keys** `(source_type, employer, period)` to keep distinct representations separate and avoid accidental merges.
+
+See `docs/matching-and-merge-spec.v2.md` for the full matching/merge rules and scoring.
+
+
 ---
 
 ## 7. Orchestration & resilience patterns
@@ -591,6 +608,7 @@ After each extraction:
 - required fields present? (name + zip at minimum)
 - numeric sanity: amounts >= 0, years plausible
 - cross-field checks:
+  - doc-type–weighted confidence scoring applied during merge; ambiguous ties emit warnings (see `docs/matching-and-merge-spec.v2.md`)
   - if income_type is W2, employer should exist
   - if Schedule C, net profit should exist
 

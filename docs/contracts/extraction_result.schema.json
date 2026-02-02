@@ -185,6 +185,25 @@
           "minLength": 1,
           "maxLength": 300,
           "description": "Short snippet anchoring the extracted value (<=300 chars)."
+        },
+        "evidence_source_context": {
+          "type": "string",
+          "enum": [
+            "tax_return_1040_taxpayer_address_block",
+            "w2_employee_address_block",
+            "closing_disclosure_borrower_section",
+            "bank_statement_account_holder_address_block",
+            "paystub_employee_info_block",
+            "paystub_header_employer_block",
+            "w2_employer_address_block",
+            "w2_wages_boxes_annual",
+            "tax_return_1040_schedule_c_net_profit",
+            "paystub_ytd_rate_of_pay",
+            "evoe_verification",
+            "letter_of_explanation",
+            "other"
+          ],
+          "description": "Source context for confidence weighting (matching-and-merge-spec §4.4). Use when possible; use 'other' only when unclear."
         }
       }
     },
@@ -303,6 +322,7 @@
           "enum": [
             "w2",
             "paystub",
+            "evoe",
             "tax_return_1040",
             "schedule_c",
             "bank_statement",

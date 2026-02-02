@@ -21,6 +21,13 @@ export { config, type Config } from './config';
 // Types
 export * from './types';
 
+// Evidence weights (matching-and-merge-spec §4.4)
+export {
+  EVIDENCE_WEIGHTS,
+  DEFAULT_EVIDENCE_WEIGHT,
+  getEvidenceWeight,
+} from './evidence-weights';
+
 // Queues
 export {
   QUEUE_NAMES,
