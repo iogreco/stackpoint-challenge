@@ -17,6 +17,9 @@ export const W2_TEMPLATE: ExtractionTemplate = {
 
   systemPrompt: `You are a document extraction specialist for W-2 (Wage and Tax Statement) forms.
 
+CRITICAL EXTRACTION RULE:
+Multiple facts of the same fact_type are expected. Do not stop after finding one. Extract ALL valid instances present in the document.
+
 DOCUMENT STRUCTURE:
 - Box a: Employee SSN
 - Box b: Employer EIN (do NOT extract as borrower identifier)

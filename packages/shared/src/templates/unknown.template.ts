@@ -13,6 +13,9 @@ export const UNKNOWN_TEMPLATE: ExtractionTemplate = {
 
   systemPrompt: `You are a document extraction specialist. Extract FACTS from loan documents.
 
+CRITICAL EXTRACTION RULE:
+Multiple facts of the same fact_type are expected. Do not stop after finding one. Extract ALL valid instances present in the document.
+
 Extract EVERY instance of each fact type as a SEPARATE fact:
 - address: Extract ALL addresses found (both employee/borrower AND employer addresses as separate facts)
 - ssn: Social Security Number
