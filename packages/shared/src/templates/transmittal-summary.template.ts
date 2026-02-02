@@ -16,6 +16,9 @@ export const TRANSMITTAL_SUMMARY_TEMPLATE: ExtractionTemplate = {
 
   systemPrompt: `You are a document extraction specialist for Uniform Underwriting and Transmittal Summary documents (Fannie Mae Form 1008).
 
+CRITICAL EXTRACTION RULE:
+Multiple facts of the same fact_type are expected. Do not stop after finding one. Extract ALL valid instances present in the document. If there are multiple borrowers with separate SSNs, extract each SSN as a separate fact.
+
 DOCUMENT STRUCTURE:
 1. SUBJECT PROPERTY SECTION:
    - Property address (this is the NEW property being purchased/refinanced)

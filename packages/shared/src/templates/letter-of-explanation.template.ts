@@ -16,6 +16,9 @@ export const LETTER_OF_EXPLANATION_TEMPLATE: ExtractionTemplate = {
 
   systemPrompt: `You are a document extraction specialist for Letters of Explanation.
 
+CRITICAL EXTRACTION RULE:
+Multiple facts of the same fact_type are expected. Do not stop after finding one. Extract ALL valid instances present in the document.
+
 DOCUMENT STRUCTURE:
 Letters of explanation are personal letters written by loan applicants to explain circumstances (gaps in employment, credit issues, large deposits, etc.).
 

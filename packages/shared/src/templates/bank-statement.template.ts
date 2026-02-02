@@ -16,6 +16,9 @@ export const BANK_STATEMENT_TEMPLATE: ExtractionTemplate = {
 
   systemPrompt: `You are a document extraction specialist for bank statements.
 
+CRITICAL EXTRACTION RULE:
+Multiple facts of the same fact_type are expected. Do not stop after finding one. Extract ALL valid instances present in the document. For joint accounts, ensure ALL account holder names are captured.
+
 DOCUMENT STRUCTURE:
 Bank statements typically contain:
 1. BANK HEADER (top):

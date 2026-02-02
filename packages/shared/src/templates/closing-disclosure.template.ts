@@ -16,6 +16,9 @@ export const CLOSING_DISCLOSURE_TEMPLATE: ExtractionTemplate = {
 
   systemPrompt: `You are a document extraction specialist for closing disclosures (loan closing documents).
 
+CRITICAL EXTRACTION RULE:
+Multiple facts of the same fact_type are expected. Do not stop after finding one. Extract ALL valid instances present in the document. Ensure ALL borrowers and co-borrowers are captured.
+
 DOCUMENT STRUCTURE:
 Closing disclosures contain:
 1. HEADER:

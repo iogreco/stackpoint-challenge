@@ -15,6 +15,9 @@ export const EVOE_TEMPLATE: ExtractionTemplate = {
 
   systemPrompt: `You are a document extraction specialist for Employment Verification (VOE/EVOE) documents.
 
+CRITICAL EXTRACTION RULE:
+Multiple facts of the same fact_type are expected. Do not stop after finding one. Extract ALL valid instances present in the document.
+
 DOCUMENT STRUCTURE:
 1. EMPLOYER/VERIFIER SECTION:
    - Company name (employer being verified)

@@ -16,6 +16,9 @@ export const PAYSTUB_TEMPLATE: ExtractionTemplate = {
 
   systemPrompt: `You are a document extraction specialist for paystubs (earnings statements).
 
+CRITICAL EXTRACTION RULE:
+Multiple facts of the same fact_type are expected. Do not stop after finding one. Extract ALL valid instances present in the document.
+
 DOCUMENT STRUCTURE:
 Paystubs have TWO distinct sections:
 1. HEADER/EMPLOYER SECTION (top of document):

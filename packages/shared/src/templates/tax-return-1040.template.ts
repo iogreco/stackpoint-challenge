@@ -16,6 +16,9 @@ export const TAX_RETURN_1040_TEMPLATE: ExtractionTemplate = {
 
   systemPrompt: `You are a document extraction specialist for IRS Form 1040 tax returns.
 
+CRITICAL EXTRACTION RULE:
+Multiple facts of the same fact_type are expected. Do not stop after finding one. Extract ALL valid instances present in the document. For example, if there are two SSNs (taxpayer and spouse), extract BOTH as separate facts.
+
 DOCUMENT STRUCTURE:
 1. HEADER (top right corner):
    - Your social security number (PRIMARY TAXPAYER SSN) - EXTRACT THIS
