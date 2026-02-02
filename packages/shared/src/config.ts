@@ -30,6 +30,8 @@ export interface Config {
   // LLM
   llmModelText: string;
   llmModelPdf: string;
+  llmModelClassification: string;
+  classificationConfidenceThreshold: number;
   llmRequestTimeoutMs: number;
   openaiApiKey: string;
 
@@ -67,8 +69,10 @@ export const config: Config = {
   objectStorePath: process.env.OBJECT_STORE_PATH || '/object-store',
 
   // LLM
-  llmModelText: process.env.LLM_MODEL_TEXT || 'gpt-4o-mini',
-  llmModelPdf: process.env.LLM_MODEL_PDF || 'gpt-4o',
+  llmModelText: process.env.LLM_MODEL_TEXT || 'gpt-5-mini',
+  llmModelPdf: process.env.LLM_MODEL_PDF || 'gpt-5-mini',
+  llmModelClassification: process.env.LLM_MODEL_CLASSIFICATION || 'gpt-5-nano',
+  classificationConfidenceThreshold: parseFloat(process.env.CLASSIFICATION_CONFIDENCE_THRESHOLD || '0.7'),
   llmRequestTimeoutMs: parseInt(process.env.LLM_REQUEST_TIMEOUT_MS || '60000', 10),
   openaiApiKey: process.env.OPENAI_API_KEY || '',
 

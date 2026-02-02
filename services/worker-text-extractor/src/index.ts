@@ -77,20 +77,21 @@ async function processExtractText(job: Job<ExtractTextJob, void>): Promise<void>
           discovered_at,
         };
 
-        // Step 3: Call LLM for extraction
-        const { result: llmResult, requestId, model } = await extractWithLlm(
+        // Step 3: Call LLM for extraction (two-step: classify then extract)
+        const { result: llmResult, requestId, model, classification } = await extractWithLlm(
           pdfResult.pages,
           documentInfo,
           correlation_id
         );
 
-        // Step 4: Build fact extraction result
+        // Step 4: Build fact extraction result with classification metadata
         const factExtractionResult = buildFactExtractionResult(
           llmResult,
           documentInfo,
           correlation_id,
           model,
-          requestId
+          requestId,
+          classification
         );
 
         // Step 5: Validate against schema

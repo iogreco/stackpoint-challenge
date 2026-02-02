@@ -461,6 +461,45 @@ This is sufficient to satisfy the requirement “clear reference to the original
 
 The pipeline defaults to text-only extraction and escalates to PDF+vision only when required fields are missing. Hard caps (max pages, max size) are not implemented here; they are applied at the Adapter API and extractor boundaries in production.
 
+### 5.4 Two-step document classification and extraction
+
+The extraction pipeline uses a two-step approach to improve accuracy:
+
+**Step 1: Classification (~100-200ms)**
+- Fast model (`gpt-5-nano` by default) identifies document type from text preview
+- Supported types: w2, paystub, bank_statement, closing_disclosure, tax_return_1040, evoe, unknown
+- Returns document_type, confidence (0-1), and reasoning
+- Falls back to "unknown" if confidence below threshold (default 0.7)
+
+**Step 2: Template-based extraction**
+- Document-specific template selected based on classification
+- Templates encode document semantics (e.g., "all W-2 facts belong to employee")
+- Prevents common errors like extracting employer address as borrower address
+- Proximity scores are determined by document structure, not just text distance
+
+**Template examples:**
+- **W-2**: Extract from Box f (employee address), not Box c (employer). All proximity_scores = 3.
+- **Paystub**: Employee section vs header section. Employee address gets score 3, employer address gets score 0.
+- **Bank statement**: All account holders share mailing address (all get score 3).
+- **Closing disclosure**: Extract property address, not borrower mailing address.
+
+**Configuration:**
+- `LLM_MODEL_CLASSIFICATION`: Classification model (default: gpt-5-nano)
+- `CLASSIFICATION_CONFIDENCE_THRESHOLD`: Minimum confidence to use specialized template (default: 0.7)
+
+**Metadata tracking:**
+```json
+{
+  "extraction_metadata": {
+    "document_type": "paystub",
+    "classification_model": "gpt-5-nano",
+    "classification_confidence": 0.95
+  }
+}
+```
+
+Templates are defined in `packages/shared/src/templates/`. See `docs/facts-based-extraction-spec.md` §9 for full details.
+
 ---
 
 ## 6. Handling document format variability

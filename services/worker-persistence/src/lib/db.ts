@@ -310,6 +310,8 @@ async function resolveBorrowerId(
     const candidateHasHighProximityAddress = existingAddrs.some((a) => (a.proximity_score ?? 0) >= 2);
 
     // SSN conflict: payload has SSN with proximity_score 3 that does not overlap any existing SSN
+    // FIX: Only conflict if candidate actually HAS an SSN - absence of SSN is not a conflict
+    const candidateHasAnySsn = existingIds.some((ex) => ex.identifier_type === 'ssn');
     for (const id of payload.identifiers) {
       if (id.type !== 'ssn') continue;
       const prox = id.evidence?.[0]?.proximity_score;
@@ -317,21 +319,32 @@ async function resolveBorrowerId(
       const overlaps = existingIds.some(
         (ex) => ex.identifier_type === 'ssn' && ssnOverlap(id.value, ex.identifier_value)
       );
-      if (!overlaps) return true;
+      // Only conflict if candidate has SSN(s) and none overlap
+      if (candidateHasAnySsn && !overlaps) return true;
     }
 
-    // Address conflict: payload has address with proximity >= 2, candidate has address with proximity >= 2, and payload address (city+state or zip+state) differs from all high-proximity candidate addresses
+    // Address conflict: only if candidate has high-prox addresses AND NONE of payload's
+    // high-prox addresses match any of them. A person can have multiple legitimate addresses,
+    // so having ONE matching address is sufficient to avoid conflict.
     if (!candidateHasHighProximityAddress) return false;
     const candidateHighProximityAddrs = existingAddrs.filter((a) => (a.proximity_score ?? 0) >= 2);
-    for (const addr of payload.addresses) {
+
+    // Collect payload's high-proximity addresses
+    const payloadHighProxAddrs = payload.addresses.filter((addr) => {
       const prox = addr.evidence?.[0]?.proximity_score ?? 0;
-      if (prox < 2) continue;
-      const v = addr.value;
-      if (!v) continue;
-      const sameAsAny = candidateHighProximityAddrs.some((ex) => addressMeaningfulPortionMatch(v, ex));
-      if (!sameAsAny) return true;
-    }
-    return false;
+      return prox >= 2 && addr.value;
+    });
+
+    // No high-prox addresses in payload means no address conflict
+    if (payloadHighProxAddrs.length === 0) return false;
+
+    // If ANY payload high-prox address matches ANY candidate high-prox address, no conflict
+    const anyMatch = payloadHighProxAddrs.some((addr) =>
+      candidateHighProximityAddrs.some((ex) => addressMeaningfulPortionMatch(addr.value!, ex))
+    );
+
+    // Only conflict if NONE of the payload addresses match
+    return !anyMatch;
   }
 
   const mergeCandidates = candidatesResult.rows.filter(

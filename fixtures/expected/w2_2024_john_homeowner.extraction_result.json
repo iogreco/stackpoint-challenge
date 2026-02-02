@@ -95,7 +95,10 @@
     "provider": "openai",
     "model": "gpt-4o-mini",
     "request_id": "REQ-W2-EXAMPLE",
-    "prompt_version": "1.0.0"
+    "prompt_version": "4.0.0-two-step",
+    "document_type": "w2",
+    "classification_model": "gpt-5-nano",
+    "classification_confidence": 0.98
   },
   "created_at": "2026-01-31T00:00:00+00:00"
 }

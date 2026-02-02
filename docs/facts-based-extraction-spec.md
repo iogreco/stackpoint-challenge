@@ -161,3 +161,104 @@ Using **facts** (rather than only "PII") allows document-level or linking data t
 | **Merge & confidence** | Existing rules in `matching-and-merge-spec.md` apply to the attributed facts; no change to merge or confidence logic. |
 
 This document is the reference for refining the design, updating `matching-and-merge-spec.md` and related docs, and creating a detailed implementation plan.
+
+---
+
+## 9. Two-Step Document Classification and Extraction
+
+### 9.1 Overview
+
+The extraction pipeline uses a two-step approach to improve accuracy:
+
+1. **Classification** (fast model, ~100-200ms): Identifies document type
+2. **Extraction** (standard model): Uses document-specific template with precise rules
+
+This approach solves:
+- **Proximity scoring failures**: Templates encode document semantics (e.g., "all W-2 facts belong to the employee")
+- **Lost document structure**: Templates know which sections matter for each document type
+- **Generic prompt limitations**: Document-specific rules prevent common errors (e.g., extracting employer address as borrower address)
+
+### 9.2 Classification Step
+
+The classification model (`gpt-5-nano` by default) receives a preview of the document text (~2000 characters) and returns:
+
+```json
+{
+  "document_type": "paystub",
+  "confidence": 0.95,
+  "reasoning": "Document shows pay period, gross pay, deductions, and employer header - typical paystub format"
+}
+```
+
+**Supported document types:**
+- `w2`: IRS Form W-2 (Wage and Tax Statement)
+- `paystub`: Pay stub / earnings statement
+- `bank_statement`: Bank account statement
+- `closing_disclosure`: Loan closing disclosure
+- `tax_return_1040`: IRS Form 1040 tax return
+- `evoe`: Employment Verification
+- `unknown`: Fallback for unrecognized documents
+
+**Confidence threshold:** If classification confidence falls below the threshold (default 0.7), the system uses the `unknown` template.
+
+### 9.3 Document-Specific Templates
+
+Each template encodes document semantics:
+
+#### W-2 Template Rules
+- ALL facts belong to the EMPLOYEE (the person receiving the W-2)
+- Extract employee address from Box f ONLY (not employer address from Box c)
+- Extract employer_name from Box c for income context
+- Extract wages from Box 1 with frequency: "annual"
+- All names_in_proximity entries get proximity_score: 3
+
+#### Paystub Template Rules
+- Two distinct sections: EMPLOYER (header) and EMPLOYEE (body)
+- Extract employee address from employee section only (proximity_score: 3)
+- Employer address gets employee with proximity_score: 0
+- DO NOT extract employer address as borrower address
+
+#### Bank Statement Template Rules
+- May have MULTIPLE account holders (joint accounts)
+- ALL account holders share the mailing address (all get proximity_score: 3)
+- Extract account number as identifier
+- Do NOT extract bank address
+
+#### Closing Disclosure Template Rules
+- Extract PROPERTY address (the loan collateral), not borrower mailing address
+- ALL borrowers share the property (all get proximity_score: 3)
+- Extract loan_number as identifier
+- Do NOT include seller names in borrower facts
+
+### 9.4 Extraction Metadata
+
+The extraction result includes classification metadata:
+
+```json
+{
+  "extraction_metadata": {
+    "provider": "openai",
+    "model": "gpt-5-mini",
+    "request_id": "req_abc123",
+    "prompt_version": "4.0.0-two-step",
+    "document_type": "paystub",
+    "classification_model": "gpt-5-nano",
+    "classification_confidence": 0.95
+  }
+}
+```
+
+### 9.5 Configuration
+
+Environment variables:
+- `LLM_MODEL_CLASSIFICATION`: Model for classification (default: `gpt-5-nano`)
+- `CLASSIFICATION_CONFIDENCE_THRESHOLD`: Minimum confidence to use specialized template (default: `0.7`)
+
+### 9.6 Templates Location
+
+Templates are defined in `packages/shared/src/templates/`:
+- `types.ts`: ExtractionTemplate interface, ClassificationResult interface
+- `classification.ts`: Classification prompt and schema
+- `w2.template.ts`, `paystub.template.ts`, etc.: Document-specific templates
+- `unknown.template.ts`: Fallback generic template
+- `index.ts`: `getTemplateForDocumentType()` function

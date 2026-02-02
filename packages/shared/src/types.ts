@@ -5,6 +5,20 @@
  */
 
 // ============================================================================
+// Document Classification
+// ============================================================================
+
+export type DocumentType =
+  | 'w2'
+  | 'paystub'
+  | 'bank_statement'
+  | 'closing_disclosure'
+  | 'tax_return_1040'
+  | 'evoe'
+  | 'transmittal_summary'
+  | 'unknown';
+
+// ============================================================================
 // Evidence & Provenance
 // ============================================================================
 
@@ -174,6 +188,9 @@ export interface ExtractionMetadata {
   model: string;
   request_id: string;
   prompt_version: string;
+  document_type?: DocumentType;
+  classification_model?: string;
+  classification_confidence?: number;
 }
 
 export interface DocumentInfo {

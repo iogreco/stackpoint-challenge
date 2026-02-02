@@ -44,6 +44,68 @@
       ]
     },
     {
+      "fact_type": "address",
+      "value": {
+        "street1": "2390 Sunny Drive",
+        "street2": "",
+        "city": "Louisville",
+        "state": "KY",
+        "zip": "40207"
+      },
+      "evidence": [
+        {
+          "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+          "source_filename": "Paystub- John Homeowner (Current).pdf",
+          "page_number": 1,
+          "quote": "ABC Technologies\n2390 Sunny Drive\nLouisville, KY 40207",
+          "evidence_source_context": "paystub_header_employer_block"
+        }
+      ],
+      "names_in_proximity": [
+        {
+          "full_name": "John Homeowner",
+          "evidence": [
+            {
+              "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+              "source_filename": "Paystub- John Homeowner (Current).pdf",
+              "page_number": 1,
+              "quote": "John Homeowner",
+              "evidence_source_context": "paystub_employee_info_block"
+            }
+          ],
+          "proximity_score": 0
+        }
+      ]
+    },
+    {
+      "fact_type": "employer_name",
+      "value": "ABC Technologies",
+      "evidence": [
+        {
+          "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+          "source_filename": "Paystub- John Homeowner (Current).pdf",
+          "page_number": 1,
+          "quote": "ABC Technologies\n2390 Sunny Drive\nLouisville, KY 40207",
+          "evidence_source_context": "paystub_header_employer_block"
+        }
+      ],
+      "names_in_proximity": [
+        {
+          "full_name": "John Homeowner",
+          "evidence": [
+            {
+              "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+              "source_filename": "Paystub- John Homeowner (Current).pdf",
+              "page_number": 1,
+              "quote": "John Homeowner",
+              "evidence_source_context": "paystub_employee_info_block"
+            }
+          ],
+          "proximity_score": 0
+        }
+      ]
+    },
+    {
       "fact_type": "income",
       "value": {
         "amount": 4900.0,
@@ -79,5 +141,15 @@
       ]
     }
   ],
-  "warnings": []
+  "warnings": [],
+  "extraction_metadata": {
+    "provider": "openai",
+    "model": "gpt-5-mini",
+    "request_id": "REQ-PAYSTUB-EXAMPLE",
+    "prompt_version": "4.0.0-two-step",
+    "document_type": "paystub",
+    "classification_model": "gpt-5-nano",
+    "classification_confidence": 0.95
+  },
+  "created_at": "2026-01-31T00:00:00+00:00"
 }

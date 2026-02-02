@@ -142,7 +142,10 @@
     "provider": "openai",
     "model": "gpt-4o-mini",
     "request_id": "REQ-CHK-EXAMPLE",
-    "prompt_version": "1.0.0"
+    "prompt_version": "4.0.0-two-step",
+    "document_type": "bank_statement",
+    "classification_model": "gpt-5-nano",
+    "classification_confidence": 0.92
   },
   "created_at": "2026-01-31T00:00:00+00:00"
 }

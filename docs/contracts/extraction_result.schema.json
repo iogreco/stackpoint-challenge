@@ -63,7 +63,23 @@
         "provider": { "type": "string", "enum": ["openai"] },
         "model": { "type": "string", "minLength": 1 },
         "request_id": { "type": "string", "minLength": 1 },
-        "prompt_version": { "type": "string", "minLength": 1 }
+        "prompt_version": { "type": "string", "minLength": 1 },
+        "document_type": {
+          "type": "string",
+          "enum": ["w2", "paystub", "bank_statement", "closing_disclosure", "tax_return_1040", "evoe", "unknown"],
+          "description": "Classified document type used to select extraction template"
+        },
+        "classification_model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model used for document classification"
+        },
+        "classification_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confidence score from document classification"
+        }
       }
     },
     "created_at": {

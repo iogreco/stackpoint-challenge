@@ -1,8 +1,11 @@
 /**
- * LLM Vision Integration
+ * LLM Vision Integration (Two-Step Extraction)
  *
- * Uses OpenAI vision API for fact-based extraction (PDF fallback).
- * Same fact schema and prompts as text extractor; merges facts when text result exists.
+ * Two-step approach for PDF fallback:
+ * 1. Classification: Fast model identifies document type (gpt-5-nano)
+ * 2. Extraction: Document-specific template with precise instructions (gpt-5-mini)
+ *
+ * Uses OpenAI vision API for fact-based extraction when text extraction fails or is incomplete.
  */
 
 import fs from 'fs';
@@ -13,14 +16,21 @@ import {
   llmRequestsCounter,
   llmRequestDurationHistogram,
   type DocumentInfo,
+  type DocumentType,
   type Evidence,
   type Fact,
   type FactExtractionResult,
   type FactIncomeValue,
   type NameInProximity,
+  getTemplateForDocumentType,
+  CLASSIFICATION_SYSTEM_PROMPT,
+  CLASSIFICATION_USER_PROMPT_TEMPLATE,
+  CLASSIFICATION_SCHEMA,
+  DOCUMENT_TYPE_NAMES,
+  type ClassificationResult,
 } from '@stackpoint/shared';
 
-const PROMPT_VERSION = '3.0.0-facts';
+const PROMPT_VERSION = '4.0.0-two-step';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || config.openaiApiKey,
@@ -166,26 +176,6 @@ const FACT_EXTRACTION_SCHEMA = {
   },
 } as const;
 
-const SYSTEM_PROMPT = `You are a document extraction specialist using vision. Extract FACTS from loan document PDFs. For each fact list ALL full names near it with proximity_score (0-3).
-
-FACT TYPES: address, ssn, income, loan_number, employer_name
-value is an object with address, string_value, and income. Fill only the one that matches fact_type (address->address, ssn/loan_number/employer_name->string_value, income->income); use empty/default for the other two.
-For each fact: value, evidence (document_id, source_filename, page_number, quote, evidence_source_context), names_in_proximity (full_name, evidence, proximity_score).
-proximity_score: 3=same line, 2=within 1 line, 1=within 2-3 lines, 0=farther.
-For loan_number: list all applicant names (score 0 if far).
-EVIDENCE SOURCE CONTEXT: use address/income context strings or "other".
-DATA: Names "First Last", ZIP 5 or 5+4, SSN XXX-XX-XXXX, dates YYYY-MM-DD, state 2-letter, currency USD.`;
-
-const USER_PROMPT_TEMPLATE = `Extract facts from this loan document PDF.
-
-DOCUMENT METADATA (use in all evidence):
-- document_id: {{document_id}}
-- source_filename: {{source_filename}}
-
-{{previous_result}}
-
-Return a facts array. Each fact: fact_type, value (address + string_value + income; fill only the branch for fact_type), evidence, names_in_proximity (proximity_score 0-3).`;
-
 /** Raw value shape from LLM (address + string_value + income all required). */
 interface LlmFactValue {
   address: { street1: string; street2: string; city: string; state: string; zip: string };
@@ -222,15 +212,137 @@ export interface LlmFactExtractionResult {
 }
 
 /**
- * Call OpenAI vision API for fact extraction
+ * Classification result with metadata for tracking
  */
-export async function extractWithVision(
+export interface ClassificationWithMetadata extends ClassificationResult {
+  model: string;
+  requestId: string;
+}
+
+/**
+ * STEP 1: Classify document type using fast model (from PDF content)
+ * For PDF fallback, we read the PDF and send a preview to the classifier
+ */
+export async function classifyDocumentFromPdf(
+  pdfPath: string,
+  documentInfo: DocumentInfo
+): Promise<ClassificationWithMetadata> {
+  const classificationModel = process.env.LLM_MODEL_CLASSIFICATION || config.llmModelClassification;
+  const confidenceThreshold = config.classificationConfidenceThreshold;
+
+  const pdfBuffer = fs.readFileSync(pdfPath);
+  const base64Pdf = pdfBuffer.toString('base64');
+
+  const userPrompt = `Classify this loan document based on the PDF content. Look at the document structure, form fields, and content to determine the document type.`;
+
+  logger.info('Classifying document type from PDF', {
+    model: classificationModel,
+    document_id: documentInfo.document_id,
+    pdf_size_bytes: pdfBuffer.length,
+  });
+
+  const startTime = Date.now();
+
+  try {
+    // Note: gpt-5-nano does not support temperature=0, so we omit it
+    const response = await openai.chat.completions.create({
+      model: classificationModel,
+      messages: [
+        { role: 'system', content: CLASSIFICATION_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'file',
+              file: {
+                filename: documentInfo.source_filename,
+                file_data: `data:application/pdf;base64,${base64Pdf}`,
+              },
+            },
+            { type: 'text', text: userPrompt },
+          ],
+        },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: CLASSIFICATION_SCHEMA,
+      },
+    });
+
+    const duration = (Date.now() - startTime) / 1000;
+    llmRequestDurationHistogram.observe({ model: classificationModel }, duration);
+    llmRequestsCounter.inc({ model: classificationModel, status: 'success' });
+
+    const requestId = response.id || `req_class_${Date.now()}`;
+    const content = response.choices[0]?.message?.content;
+
+    if (!content) {
+      throw new Error('Empty classification response from OpenAI');
+    }
+
+    const classification = JSON.parse(content) as ClassificationResult;
+
+    // Fall back to unknown if confidence is too low
+    let documentType: DocumentType = classification.document_type;
+    if (classification.confidence < confidenceThreshold) {
+      logger.warn('Classification confidence below threshold, using unknown', {
+        document_id: documentInfo.document_id,
+        classified_type: classification.document_type,
+        confidence: classification.confidence,
+        threshold: confidenceThreshold,
+      });
+      documentType = 'unknown';
+    }
+
+    logger.info('Document classified from PDF', {
+      model: classificationModel,
+      document_id: documentInfo.document_id,
+      document_type: documentType,
+      document_type_name: DOCUMENT_TYPE_NAMES[documentType],
+      confidence: classification.confidence,
+      reasoning: classification.reasoning,
+      duration_seconds: duration,
+    });
+
+    return {
+      document_type: documentType,
+      confidence: classification.confidence,
+      reasoning: classification.reasoning,
+      model: classificationModel,
+      requestId,
+    };
+  } catch (error) {
+    const duration = (Date.now() - startTime) / 1000;
+    llmRequestDurationHistogram.observe({ model: classificationModel }, duration);
+    llmRequestsCounter.inc({ model: classificationModel, status: 'error' });
+
+    logger.error('Document classification from PDF failed', error, {
+      model: classificationModel,
+      document_id: documentInfo.document_id,
+    });
+
+    // On classification failure, return unknown with zero confidence
+    return {
+      document_type: 'unknown',
+      confidence: 0,
+      reasoning: 'Classification failed, using fallback',
+      model: classificationModel,
+      requestId: `req_class_error_${Date.now()}`,
+    };
+  }
+}
+
+/**
+ * STEP 2: Extract facts from PDF using document-specific template via vision API
+ */
+async function extractWithVisionTemplate(
   pdfPath: string,
   documentInfo: DocumentInfo,
-  correlationId: string,
+  documentType: DocumentType,
   previousFacts?: { facts: any[] }
 ): Promise<{ result: LlmFactExtractionResult; requestId: string; model: string }> {
-  const model = process.env.LLM_MODEL_PDF || config.llmModelPdf;
+  const extractionModel = process.env.LLM_MODEL_PDF || config.llmModelPdf;
+  const template = getTemplateForDocumentType(documentType);
 
   const pdfBuffer = fs.readFileSync(pdfPath);
   const base64Pdf = pdfBuffer.toString('base64');
@@ -239,14 +351,23 @@ export async function extractWithVision(
     ? `Previous extraction found ${previousFacts.facts.length} facts. Add or correct facts from the PDF.`
     : 'Extract all facts from the document.';
 
-  const userPrompt = USER_PROMPT_TEMPLATE
+  // Build user prompt from template, replacing placeholders
+  // For PDF vision, we replace {{page_text}} with instructions to analyze the PDF
+  const userPrompt = template.userPromptTemplate
     .replace('{{document_id}}', documentInfo.document_id)
     .replace('{{source_filename}}', documentInfo.source_filename)
-    .replace('{{previous_result}}', previousResultStr);
+    .replace(
+      '{{page_text}}',
+      `[Analyze the PDF document directly - you can see all pages in the attached file]
 
-  logger.info('Calling OpenAI vision for fact extraction', {
-    model,
+${previousResultStr}`
+    );
+
+  logger.info('Extracting facts from PDF with template', {
+    model: extractionModel,
     document_id: documentInfo.document_id,
+    document_type: documentType,
+    template_description: template.description,
     pdf_size_bytes: pdfBuffer.length,
   });
 
@@ -254,9 +375,9 @@ export async function extractWithVision(
 
   try {
     const response = await openai.chat.completions.create({
-      model,
+      model: extractionModel,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: template.systemPrompt },
         {
           role: 'user',
           content: [
@@ -280,8 +401,8 @@ export async function extractWithVision(
     });
 
     const duration = (Date.now() - startTime) / 1000;
-    llmRequestDurationHistogram.observe({ model }, duration);
-    llmRequestsCounter.inc({ model, status: 'success' });
+    llmRequestDurationHistogram.observe({ model: extractionModel }, duration);
+    llmRequestsCounter.inc({ model: extractionModel, status: 'success' });
 
     const requestId = response.id || `req_${Date.now()}`;
     const content = response.choices[0]?.message?.content;
@@ -295,25 +416,56 @@ export async function extractWithVision(
     result.warnings = result.warnings || [];
 
     logger.info('OpenAI vision fact extraction complete', {
-      model,
+      model: extractionModel,
       request_id: requestId,
       duration_seconds: duration,
       fact_count: result.facts.length,
     });
 
-    return { result, requestId, model };
+    return { result, requestId, model: extractionModel };
   } catch (error) {
     const duration = (Date.now() - startTime) / 1000;
-    llmRequestDurationHistogram.observe({ model }, duration);
-    llmRequestsCounter.inc({ model, status: 'error' });
+    llmRequestDurationHistogram.observe({ model: extractionModel }, duration);
+    llmRequestsCounter.inc({ model: extractionModel, status: 'error' });
 
     logger.error('OpenAI vision fact extraction failed', error, {
-      model,
+      model: extractionModel,
       document_id: documentInfo.document_id,
     });
 
     throw error;
   }
+}
+
+/**
+ * Two-step extraction from PDF: Classify then extract with document-specific template
+ */
+export async function extractWithVision(
+  pdfPath: string,
+  documentInfo: DocumentInfo,
+  correlationId: string,
+  previousFacts?: { facts: any[] }
+): Promise<{
+  result: LlmFactExtractionResult;
+  requestId: string;
+  model: string;
+  classification: ClassificationWithMetadata;
+}> {
+  // STEP 1: Classify document type from PDF
+  const classification = await classifyDocumentFromPdf(pdfPath, documentInfo);
+
+  // STEP 2: Extract with document-specific template
+  const extraction = await extractWithVisionTemplate(
+    pdfPath,
+    documentInfo,
+    classification.document_type,
+    previousFacts
+  );
+
+  return {
+    ...extraction,
+    classification,
+  };
 }
 
 /**
@@ -333,14 +485,15 @@ export function mergeFacts(
 }
 
 /**
- * Build FactExtractionResult from merged LLM output
+ * Build FactExtractionResult from merged LLM output with classification metadata
  */
 export function buildFactExtractionResult(
   llmResult: LlmFactExtractionResult,
   documentInfo: DocumentInfo,
   correlationId: string,
   model: string,
-  requestId: string
+  requestId: string,
+  classification?: ClassificationWithMetadata
 ): FactExtractionResult {
   const facts: Fact[] = (llmResult.facts || []).map((f: { fact_type: string; value: unknown; evidence: Evidence[]; names_in_proximity: NameInProximity[] }) => ({
     fact_type: f.fact_type as Fact['fact_type'],
@@ -348,6 +501,7 @@ export function buildFactExtractionResult(
     evidence: f.evidence ?? [],
     names_in_proximity: f.names_in_proximity ?? [],
   }));
+
   return {
     schema_version: '2.0',
     correlation_id: correlationId,
@@ -360,6 +514,9 @@ export function buildFactExtractionResult(
       model,
       request_id: requestId,
       prompt_version: PROMPT_VERSION,
+      document_type: classification?.document_type,
+      classification_model: classification?.model,
+      classification_confidence: classification?.confidence,
     },
     created_at: new Date().toISOString(),
   };

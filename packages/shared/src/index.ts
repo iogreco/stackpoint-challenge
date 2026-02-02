@@ -70,3 +70,22 @@ export {
   validateApplication,
   schemas,
 } from './schemas';
+
+// Templates (two-step extraction)
+export {
+  getTemplateForDocumentType,
+  getAvailableDocumentTypes,
+  CLASSIFICATION_SYSTEM_PROMPT,
+  CLASSIFICATION_USER_PROMPT_TEMPLATE,
+  CLASSIFICATION_SCHEMA,
+  DOCUMENT_TYPE_NAMES,
+  W2_TEMPLATE,
+  PAYSTUB_TEMPLATE,
+  BANK_STATEMENT_TEMPLATE,
+  CLOSING_DISCLOSURE_TEMPLATE,
+  TAX_RETURN_1040_TEMPLATE,
+  EVOE_TEMPLATE,
+  UNKNOWN_TEMPLATE,
+  type ExtractionTemplate,
+  type ClassificationResult,
+} from './templates';

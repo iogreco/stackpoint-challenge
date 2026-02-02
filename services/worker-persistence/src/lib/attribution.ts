@@ -76,6 +76,19 @@ export function attributeFacts(
     if (fact.fact_type === 'address') {
       const value = fact.value;
       if (!value || typeof value !== 'object' || !('zip' in value)) continue;
+
+      // Skip employer addresses - they belong to the employer, not the borrower
+      // Evidence contexts like 'paystub_header_employer_block' or 'w2_employer_address_block'
+      // indicate addresses from employer sections that shouldn't be attributed to borrowers
+      const evidenceContext = fact.evidence?.[0]?.evidence_source_context ?? '';
+      if (evidenceContext.includes('employer')) {
+        logger.debug('Attribution: skipping employer address', {
+          evidence_source_context: evidenceContext,
+          address: value,
+        });
+        continue;
+      }
+
       const nameEntry = chooseBestName(fact);
       const borrowerRef = nameEntry ? normalizeName(nameEntry.full_name) : null;
       if (!borrowerRef) continue;

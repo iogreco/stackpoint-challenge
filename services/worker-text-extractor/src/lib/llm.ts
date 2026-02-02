@@ -1,8 +1,14 @@
 /**
- * LLM Integration
+ * LLM Integration (Two-Step Extraction)
  *
- * Calls OpenAI for structured data extraction from document text.
- * Uses facts-based extraction: emits facts with names_in_proximity and proximity_score.
+ * Two-step approach:
+ * 1. Classification: Fast model identifies document type (gpt-5-nano)
+ * 2. Extraction: Document-specific template with precise instructions (gpt-5-mini)
+ *
+ * This solves:
+ * - Proximity scoring failures (templates encode document semantics)
+ * - Lost document structure (templates know which sections matter)
+ * - Generic prompts ignoring document-specific rules
  */
 
 import OpenAI from 'openai';
@@ -12,15 +18,22 @@ import {
   llmRequestsCounter,
   llmRequestDurationHistogram,
   type DocumentInfo,
+  type DocumentType,
   type Evidence,
   type Fact,
   type FactExtractionResult,
   type FactIncomeValue,
   type NameInProximity,
+  getTemplateForDocumentType,
+  CLASSIFICATION_SYSTEM_PROMPT,
+  CLASSIFICATION_USER_PROMPT_TEMPLATE,
+  CLASSIFICATION_SCHEMA,
+  DOCUMENT_TYPE_NAMES,
+  type ClassificationResult,
 } from '@stackpoint/shared';
 import type { PageText } from './pdf';
 
-const PROMPT_VERSION = '3.0.0-facts';
+const PROMPT_VERSION = '4.0.0-two-step';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || config.openaiApiKey,
@@ -172,92 +185,157 @@ const FACT_EXTRACTION_SCHEMA = {
   },
 } as const;
 
-const SYSTEM_PROMPT = `You are a document extraction specialist. Extract FACTS from loan documents. Do not assign facts to people; instead, for each fact list ALL full names that appear near it and assign a proximity_score (0-3).
-
-FACT TYPES to extract:
-- address: street1, street2, city, state, zip (borrower or employer address; use evidence_source_context to distinguish)
-- ssn: SSN string (e.g. xxx-xx-5000 or full)
-- income: amount, currency, frequency, period (year, start_date, end_date), employer, source_type (w2, paystub, evoe, etc.)
-- loan_number: the loan number string (often in header)
-- employer_name: employer or business name
-
-For EACH fact you must provide:
-1. value: an object with address, string_value, and income. Fill only the one that matches fact_type: for address fill address (street1, street2, city, state, zip) and use empty strings for string_value and default income (amount:0, currency:"USD", frequency:"unknown", period:{year:0, start_date:"", end_date:""}, employer:"", source_type:"other"). For ssn, loan_number, or employer_name fill string_value; use empty address and default income. For income fill income; use empty address and string_value "".
-2. evidence: at least one entry with document_id, source_filename, page_number, quote, evidence_source_context
-3. names_in_proximity: EVERY full name you see near this fact, each with:
-   - full_name: as it appears (e.g. "John Homeowner")
-   - evidence: where this name appears (document_id, source_filename, page_number, quote, evidence_source_context)
-   - proximity_score: 0-3
-     - 3 = same line (or same logical block) as the fact
-     - 2 = within 1 line (above or below)
-     - 1 = within 2-3 lines
-     - 0 = farther than 2-3 lines (or irrelevant)
-   Names beyond 2-3 lines from the fact get score 0.
-
-EVIDENCE SOURCE CONTEXT (use in evidence.evidence_source_context):
-Address: tax_return_1040_taxpayer_address_block, w2_employee_address_block, closing_disclosure_borrower_section, bank_statement_account_holder_address_block, paystub_employee_info_block, paystub_header_employer_block, w2_employer_address_block
-Income: w2_wages_boxes_annual, tax_return_1040_schedule_c_net_profit, paystub_ytd_rate_of_pay, evoe_verification, letter_of_explanation
-Use "other" when unclear.
-
-DATA FORMATTING:
-- Names: "First Last"
-- ZIP: 5 digits or 5+4
-- SSN: XXX-XX-XXXX
-- Dates: YYYY-MM-DD
-- State: 2-letter (e.g. DC, CA)
-- Currency: USD
-
-For loan_number facts: list all applicant/borrower names that appear on the document in names_in_proximity (even if far from the loan number; use score 0 if beyond 2-3 lines).`;
-
-const USER_PROMPT_TEMPLATE = `Extract facts from this loan document.
-
-DOCUMENT METADATA (use these exact values in all evidence):
-- document_id: {{document_id}}
-- source_filename: {{source_filename}}
-
-DOCUMENT TEXT BY PAGE:
-{{page_text}}
-
-Return a facts array. Each fact must have fact_type, value, evidence (at least one), and names_in_proximity (all names near the fact with proximity_score 0-3).`;
-
 export interface LlmFactExtractionResult {
   facts: any[];
   warnings?: string[];
 }
 
 /**
- * Call OpenAI to extract facts from document text using Structured Outputs
+ * Classification result with metadata for tracking
  */
-export async function extractWithLlm(
-  pages: PageText[],
+export interface ClassificationWithMetadata extends ClassificationResult {
+  model: string;
+  requestId: string;
+}
+
+/**
+ * Format page text for extraction
+ */
+function formatPageText(pages: PageText[]): string {
+  return pages.map((p) => `--- Page ${p.pageNumber} ---\n${p.text}`).join('\n\n');
+}
+
+/**
+ * STEP 1: Classify document type using fast model
+ */
+export async function classifyDocument(
+  pageText: string,
+  documentInfo: DocumentInfo
+): Promise<ClassificationWithMetadata> {
+  const classificationModel = process.env.LLM_MODEL_CLASSIFICATION || config.llmModelClassification;
+  const confidenceThreshold = config.classificationConfidenceThreshold;
+
+  // Use first ~2000 characters for classification (fast preview)
+  const preview = pageText.slice(0, 2000);
+
+  const userPrompt = CLASSIFICATION_USER_PROMPT_TEMPLATE.replace('{{preview}}', preview);
+
+  logger.info('Classifying document type', {
+    model: classificationModel,
+    document_id: documentInfo.document_id,
+    preview_length: preview.length,
+  });
+
+  const startTime = Date.now();
+
+  try {
+    // Note: gpt-5-nano does not support temperature=0, so we omit it
+    const response = await openai.chat.completions.create({
+      model: classificationModel,
+      messages: [
+        { role: 'system', content: CLASSIFICATION_SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: CLASSIFICATION_SCHEMA,
+      },
+    });
+
+    const duration = (Date.now() - startTime) / 1000;
+    llmRequestDurationHistogram.observe({ model: classificationModel }, duration);
+    llmRequestsCounter.inc({ model: classificationModel, status: 'success' });
+
+    const requestId = response.id || `req_class_${Date.now()}`;
+    const content = response.choices[0]?.message?.content;
+
+    if (!content) {
+      throw new Error('Empty classification response from OpenAI');
+    }
+
+    const classification = JSON.parse(content) as ClassificationResult;
+
+    // Fall back to unknown if confidence is too low
+    let documentType: DocumentType = classification.document_type;
+    if (classification.confidence < confidenceThreshold) {
+      logger.warn('Classification confidence below threshold, using unknown', {
+        document_id: documentInfo.document_id,
+        classified_type: classification.document_type,
+        confidence: classification.confidence,
+        threshold: confidenceThreshold,
+      });
+      documentType = 'unknown';
+    }
+
+    logger.info('Document classified', {
+      model: classificationModel,
+      document_id: documentInfo.document_id,
+      document_type: documentType,
+      document_type_name: DOCUMENT_TYPE_NAMES[documentType],
+      confidence: classification.confidence,
+      reasoning: classification.reasoning,
+      duration_seconds: duration,
+    });
+
+    return {
+      document_type: documentType,
+      confidence: classification.confidence,
+      reasoning: classification.reasoning,
+      model: classificationModel,
+      requestId,
+    };
+  } catch (error) {
+    const duration = (Date.now() - startTime) / 1000;
+    llmRequestDurationHistogram.observe({ model: classificationModel }, duration);
+    llmRequestsCounter.inc({ model: classificationModel, status: 'error' });
+
+    logger.error('Document classification failed', error, {
+      model: classificationModel,
+      document_id: documentInfo.document_id,
+    });
+
+    // On classification failure, return unknown with zero confidence
+    return {
+      document_type: 'unknown',
+      confidence: 0,
+      reasoning: 'Classification failed, using fallback',
+      model: classificationModel,
+      requestId: `req_class_error_${Date.now()}`,
+    };
+  }
+}
+
+/**
+ * STEP 2: Extract facts using document-specific template
+ */
+async function extractWithTemplate(
+  pageText: string,
   documentInfo: DocumentInfo,
-  correlationId: string
+  documentType: DocumentType
 ): Promise<{ result: LlmFactExtractionResult; requestId: string; model: string }> {
-  const model = process.env.LLM_MODEL_TEXT || config.llmModelText;
+  const extractionModel = process.env.LLM_MODEL_TEXT || config.llmModelText;
+  const template = getTemplateForDocumentType(documentType);
 
-  const pageText = pages
-    .map((p) => `--- Page ${p.pageNumber} ---\n${p.text}`)
-    .join('\n\n');
-
-  const userPrompt = USER_PROMPT_TEMPLATE
+  const userPrompt = template.userPromptTemplate
     .replace('{{document_id}}', documentInfo.document_id)
     .replace('{{source_filename}}', documentInfo.source_filename)
     .replace('{{page_text}}', pageText);
 
-  logger.info('Calling OpenAI for fact extraction', {
-    model,
+  logger.info('Extracting facts with template', {
+    model: extractionModel,
     document_id: documentInfo.document_id,
+    document_type: documentType,
+    template_description: template.description,
     text_length: pageText.length,
-    page_count: pages.length,
   });
 
   const startTime = Date.now();
 
   try {
     const response = await openai.chat.completions.create({
-      model,
+      model: extractionModel,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: template.systemPrompt },
         { role: 'user', content: userPrompt },
       ],
       response_format: {
@@ -268,8 +346,8 @@ export async function extractWithLlm(
     });
 
     const duration = (Date.now() - startTime) / 1000;
-    llmRequestDurationHistogram.observe({ model }, duration);
-    llmRequestsCounter.inc({ model, status: 'success' });
+    llmRequestDurationHistogram.observe({ model: extractionModel }, duration);
+    llmRequestsCounter.inc({ model: extractionModel, status: 'success' });
 
     const requestId = response.id || `req_${Date.now()}`;
     const content = response.choices[0]?.message?.content;
@@ -279,7 +357,7 @@ export async function extractWithLlm(
     }
 
     logger.info('OpenAI fact extraction complete', {
-      model,
+      model: extractionModel,
       request_id: requestId,
       duration_seconds: duration,
       tokens_used: response.usage?.total_tokens,
@@ -294,19 +372,47 @@ export async function extractWithLlm(
       fact_count: result.facts.length,
     });
 
-    return { result, requestId, model };
+    return { result, requestId, model: extractionModel };
   } catch (error) {
     const duration = (Date.now() - startTime) / 1000;
-    llmRequestDurationHistogram.observe({ model }, duration);
-    llmRequestsCounter.inc({ model, status: 'error' });
+    llmRequestDurationHistogram.observe({ model: extractionModel }, duration);
+    llmRequestsCounter.inc({ model: extractionModel, status: 'error' });
 
     logger.error('OpenAI fact extraction failed', error, {
-      model,
+      model: extractionModel,
       document_id: documentInfo.document_id,
     });
 
     throw error;
   }
+}
+
+/**
+ * Two-step extraction: Classify then extract with document-specific template
+ */
+export async function extractWithLlm(
+  pages: PageText[],
+  documentInfo: DocumentInfo,
+  correlationId: string
+): Promise<{
+  result: LlmFactExtractionResult;
+  requestId: string;
+  model: string;
+  classification: ClassificationWithMetadata;
+}> {
+  // Format page text once
+  const pageText = formatPageText(pages);
+
+  // STEP 1: Classify document type
+  const classification = await classifyDocument(pageText, documentInfo);
+
+  // STEP 2: Extract with document-specific template
+  const extraction = await extractWithTemplate(pageText, documentInfo, classification.document_type);
+
+  return {
+    ...extraction,
+    classification,
+  };
 }
 
 /** Raw value shape from LLM (address + string_value + income all required). */
@@ -330,14 +436,15 @@ function normalizeFactValue(factType: string, raw: LlmFactValue): Fact['value'] 
 }
 
 /**
- * Build FactExtractionResult from LLM output
+ * Build FactExtractionResult from LLM output with classification metadata
  */
 export function buildFactExtractionResult(
   llmResult: LlmFactExtractionResult,
   documentInfo: DocumentInfo,
   correlationId: string,
   model: string,
-  requestId: string
+  requestId: string,
+  classification?: ClassificationWithMetadata
 ): FactExtractionResult {
   const facts: Fact[] = (llmResult.facts || []).map((f: { fact_type: string; value: LlmFactValue; evidence: Evidence[]; names_in_proximity: NameInProximity[] }) => ({
     fact_type: f.fact_type as Fact['fact_type'],
@@ -345,6 +452,7 @@ export function buildFactExtractionResult(
     evidence: f.evidence ?? [],
     names_in_proximity: f.names_in_proximity ?? [],
   }));
+
   return {
     schema_version: '2.0',
     correlation_id: correlationId,
@@ -357,6 +465,9 @@ export function buildFactExtractionResult(
       model,
       request_id: requestId,
       prompt_version: PROMPT_VERSION,
+      document_type: classification?.document_type,
+      classification_model: classification?.model,
+      classification_confidence: classification?.confidence,
     },
     created_at: new Date().toISOString(),
   };

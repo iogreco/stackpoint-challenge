@@ -75,9 +75,9 @@ async function processExtractPdf(job: Job<ExtractPdfJob, void>): Promise<void> {
           discovered_at,
         };
 
-        // Step 2: Call vision API (pass previous text facts if any)
+        // Step 2: Call vision API with two-step extraction (pass previous text facts if any)
         const filePath = raw_uri.replace('file://', '');
-        const { result: visionResult, requestId, model } = await extractWithVision(
+        const { result: visionResult, requestId, model, classification } = await extractWithVision(
           filePath,
           documentInfo,
           correlation_id,
@@ -87,13 +87,14 @@ async function processExtractPdf(job: Job<ExtractPdfJob, void>): Promise<void> {
         // Step 3: Merge text facts with vision facts
         const mergedResult = mergeFacts(fact_extraction_result, visionResult);
 
-        // Step 4: Build fact extraction result
+        // Step 4: Build fact extraction result with classification metadata
         const factExtractionResult = buildFactExtractionResult(
           mergedResult,
           documentInfo,
           correlation_id,
           model,
-          requestId
+          requestId,
+          classification
         );
 
         // Step 5: Validate against schema
