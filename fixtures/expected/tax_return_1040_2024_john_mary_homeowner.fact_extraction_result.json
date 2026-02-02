@@ -1,0 +1,175 @@
+{
+  "schema_version": "2.0",
+  "correlation_id": "00000000-0000-0000-0000-000000000010",
+  "document": {
+    "document_id": "sha256:0537f06ea0e28ed2ec073b5ccb2c78e1ca80ec2b98254189b12f414ff7684257",
+    "source_filename": "1040 and Schedule C (2023 and 2024) - John and Mary Homeowner .pdf",
+    "raw_uri": "file://storage/raw/fixture_source/0537f06ea0e28ed2ec073b5ccb2c78e1ca80ec2b98254189b12f414ff7684257.pdf",
+    "source_system": "fixture_source"
+  },
+  "extraction_mode": "text",
+  "facts": [
+    {
+      "fact_type": "ssn",
+      "value": "999-40-5000",
+      "evidence": [
+        {
+          "document_id": "sha256:0537f06ea0e28ed2ec073b5ccb2c78e1ca80ec2b98254189b12f414ff7684257",
+          "source_filename": "1040 and Schedule C (2023 and 2024) - John and Mary Homeowner .pdf",
+          "page_number": 1,
+          "quote": "Your social security number John Homeowner 999 40 5000",
+          "evidence_source_context": "tax_return_1040_taxpayer_ssn"
+        }
+      ],
+      "names_in_proximity": [
+        {
+          "full_name": "John Homeowner",
+          "evidence": [
+            {
+              "document_id": "sha256:0537f06ea0e28ed2ec073b5ccb2c78e1ca80ec2b98254189b12f414ff7684257",
+              "source_filename": "1040 and Schedule C (2023 and 2024) - John and Mary Homeowner .pdf",
+              "page_number": 1,
+              "quote": "John Homeowner",
+              "evidence_source_context": "tax_return_1040_taxpayer_ssn"
+            }
+          ],
+          "proximity_score": 3
+        }
+      ]
+    },
+    {
+      "fact_type": "ssn",
+      "value": "500-22-2000",
+      "evidence": [
+        {
+          "document_id": "sha256:0537f06ea0e28ed2ec073b5ccb2c78e1ca80ec2b98254189b12f414ff7684257",
+          "source_filename": "1040 and Schedule C (2023 and 2024) - John and Mary Homeowner .pdf",
+          "page_number": 1,
+          "quote": "Spouse's social security number Mary Homeowner 500 22 2000",
+          "evidence_source_context": "tax_return_1040_taxpayer_ssn"
+        }
+      ],
+      "names_in_proximity": [
+        {
+          "full_name": "Mary Homeowner",
+          "evidence": [
+            {
+              "document_id": "sha256:0537f06ea0e28ed2ec073b5ccb2c78e1ca80ec2b98254189b12f414ff7684257",
+              "source_filename": "1040 and Schedule C (2023 and 2024) - John and Mary Homeowner .pdf",
+              "page_number": 1,
+              "quote": "Mary Homeowner",
+              "evidence_source_context": "tax_return_1040_taxpayer_ssn"
+            }
+          ],
+          "proximity_score": 3
+        }
+      ]
+    },
+    {
+      "fact_type": "address",
+      "value": {
+        "street1": "175 13th Street",
+        "street2": "",
+        "city": "Washington",
+        "state": "DC",
+        "zip": "20013"
+      },
+      "evidence": [
+        {
+          "document_id": "sha256:0537f06ea0e28ed2ec073b5ccb2c78e1ca80ec2b98254189b12f414ff7684257",
+          "source_filename": "1040 and Schedule C (2023 and 2024) - John and Mary Homeowner .pdf",
+          "page_number": 1,
+          "quote": "Home address (number and street). 175 13th Street Washington DC 20013",
+          "evidence_source_context": "tax_return_1040_taxpayer_address_block"
+        }
+      ],
+      "names_in_proximity": [
+        {
+          "full_name": "John Homeowner",
+          "evidence": [
+            {
+              "document_id": "sha256:0537f06ea0e28ed2ec073b5ccb2c78e1ca80ec2b98254189b12f414ff7684257",
+              "source_filename": "1040 and Schedule C (2023 and 2024) - John and Mary Homeowner .pdf",
+              "page_number": 1,
+              "quote": "John Homeowner",
+              "evidence_source_context": "tax_return_1040_taxpayer_address_block"
+            }
+          ],
+          "proximity_score": 3
+        },
+        {
+          "full_name": "Mary Homeowner",
+          "evidence": [
+            {
+              "document_id": "sha256:0537f06ea0e28ed2ec073b5ccb2c78e1ca80ec2b98254189b12f414ff7684257",
+              "source_filename": "1040 and Schedule C (2023 and 2024) - John and Mary Homeowner .pdf",
+              "page_number": 1,
+              "quote": "Mary Homeowner",
+              "evidence_source_context": "tax_return_1040_taxpayer_address_block"
+            }
+          ],
+          "proximity_score": 3
+        }
+      ]
+    },
+    {
+      "fact_type": "income",
+      "value": {
+        "amount": 143920,
+        "currency": "USD",
+        "frequency": "annual",
+        "period": { "year": 2024, "start_date": "", "end_date": "" },
+        "employer": "",
+        "source_type": "tax_return_1040"
+      },
+      "evidence": [
+        {
+          "document_id": "sha256:0537f06ea0e28ed2ec073b5ccb2c78e1ca80ec2b98254189b12f414ff7684257",
+          "source_filename": "1040 and Schedule C (2023 and 2024) - John and Mary Homeowner .pdf",
+          "page_number": 1,
+          "quote": "Total amount from Form(s) W-2, box 1 143,920",
+          "evidence_source_context": "tax_return_1040_taxpayer_address_block"
+        }
+      ],
+      "names_in_proximity": [
+        {
+          "full_name": "John Homeowner",
+          "evidence": [
+            {
+              "document_id": "sha256:0537f06ea0e28ed2ec073b5ccb2c78e1ca80ec2b98254189b12f414ff7684257",
+              "source_filename": "1040 and Schedule C (2023 and 2024) - John and Mary Homeowner .pdf",
+              "page_number": 1,
+              "quote": "John Homeowner",
+              "evidence_source_context": "tax_return_1040_taxpayer_address_block"
+            }
+          ],
+          "proximity_score": 3
+        },
+        {
+          "full_name": "Mary Homeowner",
+          "evidence": [
+            {
+              "document_id": "sha256:0537f06ea0e28ed2ec073b5ccb2c78e1ca80ec2b98254189b12f414ff7684257",
+              "source_filename": "1040 and Schedule C (2023 and 2024) - John and Mary Homeowner .pdf",
+              "page_number": 1,
+              "quote": "Mary Homeowner",
+              "evidence_source_context": "tax_return_1040_taxpayer_address_block"
+            }
+          ],
+          "proximity_score": 3
+        }
+      ]
+    }
+  ],
+  "warnings": [],
+  "extraction_metadata": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "request_id": "REQ-1040-EXAMPLE",
+    "prompt_version": "4.0.0-two-step",
+    "document_type": "tax_return_1040",
+    "classification_model": "gpt-5-nano",
+    "classification_confidence": 0.95
+  },
+  "created_at": "2026-02-02T00:00:00+00:00"
+}

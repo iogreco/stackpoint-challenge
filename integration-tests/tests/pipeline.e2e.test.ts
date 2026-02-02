@@ -37,7 +37,7 @@ describe('Document Extraction Pipeline', () => {
       const response = await fetch(`${ADAPTER_API_URL}/health`);
       expect(response.ok).toBe(true);
 
-      const data = await response.json();
+      const data = await response.json() as { status: string; service: string };
       expect(data.status).toBe('healthy');
       expect(data.service).toBe('adapter-api');
     });
@@ -46,7 +46,7 @@ describe('Document Extraction Pipeline', () => {
       const response = await fetch(`${QUERY_API_URL}/health`);
       expect(response.ok).toBe(true);
 
-      const data = await response.json();
+      const data = await response.json() as { status: string; service: string };
       expect(data.status).toBe('healthy');
       expect(data.service).toBe('query-api');
     });
@@ -65,7 +65,7 @@ describe('Document Extraction Pipeline', () => {
 
       expect(response.status).toBe(202);
 
-      const data = await response.json();
+      const data = await response.json() as { correlation_id: string };
       expect(data.correlation_id).toBeDefined();
       expect(typeof data.correlation_id).toBe('string');
     });
@@ -79,7 +79,7 @@ describe('Document Extraction Pipeline', () => {
 
       expect(response.status).toBe(400);
 
-      const data = await response.json();
+      const data = await response.json() as { error: { code: string } };
       expect(data.error.code).toBe('invalid_request');
     });
   });
@@ -89,7 +89,7 @@ describe('Document Extraction Pipeline', () => {
       const response = await fetch(`${QUERY_API_URL}/borrowers`);
       expect(response.ok).toBe(true);
 
-      const data = await response.json();
+      const data = await response.json() as { items: any[] };
       expect(data.items).toBeDefined();
       expect(Array.isArray(data.items)).toBe(true);
     });
@@ -98,7 +98,7 @@ describe('Document Extraction Pipeline', () => {
       const response = await fetch(`${QUERY_API_URL}/borrowers/00000000-0000-0000-0000-000000000000`);
       expect(response.status).toBe(404);
 
-      const data = await response.json();
+      const data = await response.json() as { error: { code: string } };
       expect(data.error.code).toBe('not_found');
     });
 
@@ -106,7 +106,7 @@ describe('Document Extraction Pipeline', () => {
       const response = await fetch(`${QUERY_API_URL}/applications/by-loan/NONEXISTENT123`);
       expect(response.status).toBe(404);
 
-      const data = await response.json();
+      const data = await response.json() as { error: { code: string } };
       expect(data.error.code).toBe('not_found');
     });
 
@@ -114,7 +114,7 @@ describe('Document Extraction Pipeline', () => {
       const response = await fetch(`${QUERY_API_URL}/borrowers?name=test&zip=12345&status=COMPLETE`);
       expect(response.ok).toBe(true);
 
-      const data = await response.json();
+      const data = await response.json() as { items: any[] };
       expect(data.items).toBeDefined();
     });
 
@@ -122,7 +122,7 @@ describe('Document Extraction Pipeline', () => {
       const response = await fetch(`${QUERY_API_URL}/borrowers?status=INVALID`);
       expect(response.status).toBe(400);
 
-      const data = await response.json();
+      const data = await response.json() as { error: { code: string } };
       expect(data.error.code).toBe('invalid_request');
     });
   });

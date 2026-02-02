@@ -107,6 +107,8 @@
             "paystub_employee_info_block",
             "paystub_header_employer_block",
             "w2_employer_address_block",
+            "tax_return_1040_taxpayer_ssn",
+            "w2_employee_ssn",
             "w2_wages_boxes_annual",
             "tax_return_1040_schedule_c_net_profit",
             "paystub_ytd_rate_of_pay",

@@ -15,6 +15,9 @@ export const EVIDENCE_WEIGHTS: Record<EvidenceSourceContext, number> = {
   paystub_employee_info_block: 2.0,
   paystub_header_employer_block: 0.25,
   w2_employer_address_block: 0.25,
+  // SSN (high weight - authoritative sources)
+  tax_return_1040_taxpayer_ssn: 3.0,
+  w2_employee_ssn: 3.0,
   // Income amount
   w2_wages_boxes_annual: 3.0,
   tax_return_1040_schedule_c_net_profit: 3.0,

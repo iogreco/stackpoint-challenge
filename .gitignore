@@ -41,6 +41,9 @@ object-store/
 coverage/
 .nyc_output/
 
+# Debug outputs
+tmp/
+
 # Prometheus/Grafana data
 prometheus_data/
 grafana_data/

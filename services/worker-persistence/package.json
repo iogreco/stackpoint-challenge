@@ -8,9 +8,9 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
-    "init-db": "node dist/init-db.js"
+    "start": "node --env-file=../../.env dist/index.js",
+    "dev": "node --env-file=../../.env --import=tsx src/index.ts",
+    "init-db": "node --env-file=../../.env dist/init-db.js"
   },
   "dependencies": {
     "@stackpoint/shared": "file:../../packages/shared",
@@ -22,6 +22,7 @@
   "devDependencies": {
     "@types/node": "^20.10.0",
     "@types/pg": "^8.10.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.3.0"
   }
 }

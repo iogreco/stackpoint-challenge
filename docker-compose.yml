@@ -134,8 +134,11 @@ services:
       OBJECT_STORE_PATH: /object-store
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       LLM_MODEL_TEXT: gpt-4o-mini
+      DEBUG_LLM_PROMPTS: ${DEBUG_LLM_PROMPTS:-}
+      DEBUG_LLM_PROMPTS_DIR: /debug-output
     volumes:
       - object_store:/object-store:ro
+      - ./tmp/llm-debug:/debug-output
     networks:
       - stackpoint-network
     depends_on:
@@ -155,8 +158,11 @@ services:
       OBJECT_STORE_PATH: /object-store
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       LLM_MODEL_PDF: gpt-4o
+      DEBUG_LLM_PROMPTS: ${DEBUG_LLM_PROMPTS:-}
+      DEBUG_LLM_PROMPTS_DIR: /debug-output
     volumes:
       - object_store:/object-store:ro
+      - ./tmp/llm-debug:/debug-output
     networks:
       - stackpoint-network
     depends_on:

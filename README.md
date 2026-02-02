@@ -109,12 +109,38 @@ docs/
 ### Running Tests
 
 ```bash
-# Unit tests
+# All unit tests (fast, no API calls, uses fixtures)
 npm test
 
-# E2E tests (requires running services)
+# Extraction quality unit tests only
+npm test -- --testPathPattern="extraction-quality.test"
+
+# Attribution logic tests
+npm test -- --testPathPattern="attribution"
+```
+
+#### E2E Tests (require running services)
+
+E2E tests run against the live extraction pipeline and require:
+- Running services (`make up`)
+- Valid `OPENAI_API_KEY` environment variable
+
+```bash
+# E2E extraction quality tests (validates LLM extraction quality)
+RUN_E2E_TESTS=1 npm test -- --testPathPattern="extraction-quality.e2e"
+
+# All E2E tests
 make test-e2e
 ```
+
+#### What the Tests Cover
+
+| Test Suite | Description |
+|------------|-------------|
+| `extraction-quality.test.ts` | Validates extraction against fixture files (SSN for both taxpayers, multi-name attribution, employer address filtering) |
+| `extraction-quality.e2e.test.ts` | Live extraction tests (SSN merging, confidence scoring, joint income attribution) |
+| `attribution.test.ts` | Unit tests for fact-to-borrower attribution logic |
+| `pipeline.e2e.test.ts` | Basic API health and endpoint tests |
 
 ### Observability
 

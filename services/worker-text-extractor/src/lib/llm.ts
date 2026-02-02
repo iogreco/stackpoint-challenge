@@ -12,6 +12,8 @@
  */
 
 import OpenAI from 'openai';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
   logger,
   config,
@@ -81,6 +83,8 @@ const FACT_EXTRACTION_SCHEMA = {
               'paystub_employee_info_block',
               'paystub_header_employer_block',
               'w2_employer_address_block',
+              'tax_return_1040_taxpayer_ssn',
+              'w2_employee_ssn',
               'w2_wages_boxes_annual',
               'tax_return_1040_schedule_c_net_profit',
               'paystub_ytd_rate_of_pay',
@@ -206,6 +210,177 @@ function formatPageText(pages: PageText[]): string {
 }
 
 /**
+ * Debug: Write LLM prompts to temp folder for inspection.
+ * Enable by setting DEBUG_LLM_PROMPTS=1 and optionally DEBUG_LLM_PROMPTS_DIR=/path/to/dir
+ */
+function debugWritePrompts(
+  documentInfo: DocumentInfo,
+  documentType: DocumentType,
+  extractionText: string,
+  systemPrompt: string,
+  userPrompt: string
+): void {
+  if (!process.env.DEBUG_LLM_PROMPTS) return;
+
+  const debugDir = process.env.DEBUG_LLM_PROMPTS_DIR || '/tmp/llm-debug';
+
+  try {
+    if (!fs.existsSync(debugDir)) {
+      fs.mkdirSync(debugDir, { recursive: true });
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const baseFilename = `${timestamp}_${documentInfo.document_id}`;
+
+    // Write the raw extraction text (what gets interpolated into the template)
+    fs.writeFileSync(
+      path.join(debugDir, `${baseFilename}_extraction_text.txt`),
+      `Document ID: ${documentInfo.document_id}\n` +
+      `Source: ${documentInfo.source_filename}\n` +
+      `Document Type: ${documentType}\n` +
+      `Text Length: ${extractionText.length} chars\n` +
+      `${'='.repeat(80)}\n\n` +
+      extractionText
+    );
+
+    // Write the full system prompt
+    fs.writeFileSync(
+      path.join(debugDir, `${baseFilename}_system_prompt.txt`),
+      systemPrompt
+    );
+
+    // Write the full user prompt (with interpolated values)
+    fs.writeFileSync(
+      path.join(debugDir, `${baseFilename}_user_prompt.txt`),
+      userPrompt
+    );
+
+    logger.info('Debug: wrote LLM prompts to disk', {
+      debug_dir: debugDir,
+      document_id: documentInfo.document_id,
+      files: [`${baseFilename}_extraction_text.txt`, `${baseFilename}_system_prompt.txt`, `${baseFilename}_user_prompt.txt`],
+    });
+  } catch (err) {
+    logger.warn('Debug: failed to write LLM prompts', { error: String(err) });
+  }
+}
+
+/**
+ * Maximum characters to send to LLM for extraction.
+ * gpt-4o-mini has 128k context but performs better with focused input.
+ * Set to 35k to accommodate multi-year 1040s (critical pages ~18k + Schedule C ~13k).
+ */
+const MAX_EXTRACTION_CHARS = 35000;
+
+/**
+ * Check if a page is a Form 1040 header page (first page of a tax return).
+ * These pages contain SSN, address, and filing status - critical for extraction.
+ */
+function is1040HeaderPage(page: PageText): boolean {
+  const text = page.text;
+  // Look for "US Individual Income Tax Return" which appears on the first page of each 1040
+  // Also check for year + 1040 pattern at the start (e.g., "2024 1040" or "2023 1040")
+  const hasIndividualTaxReturn = text.includes('Individual Income Tax Return');
+  const hasYearPattern = /\b20\d{2}\s+1040\b/.test(text.slice(0, 500));
+  const hasFormHeader = /^Department of the Treasury/m.test(text.slice(0, 200));
+
+  return hasIndividualTaxReturn && (hasYearPattern || hasFormHeader);
+}
+
+/**
+ * Prioritize pages for extraction based on document type.
+ * For tax returns with multiple years: detect ALL 1040 header pages + their following pages
+ * For other documents: first pages up to limit
+ */
+function prioritizePages(pages: PageText[], documentType: DocumentType): PageText[] {
+  if (documentType === 'tax_return_1040') {
+    // For multi-year 1040 documents: find ALL header pages (first page of each tax year)
+    const headerPageNumbers = new Set<number>();
+    const followingPageNumbers = new Set<number>();
+    const scheduleCPageNumbers = new Set<number>();
+
+    for (const page of pages) {
+      if (is1040HeaderPage(page)) {
+        headerPageNumbers.add(page.pageNumber);
+        // Also include the following page (contains signature, additional info)
+        followingPageNumbers.add(page.pageNumber + 1);
+      }
+
+      const textLower = page.text.toLowerCase();
+      if (textLower.includes('schedule c') || textLower.includes('profit or loss from business')) {
+        scheduleCPageNumbers.add(page.pageNumber);
+      }
+    }
+
+    // Build prioritized list
+    const headerPages: PageText[] = [];
+    const followingPages: PageText[] = [];
+    const scheduleCPages: PageText[] = [];
+    const otherPages: PageText[] = [];
+
+    for (const page of pages) {
+      if (headerPageNumbers.has(page.pageNumber)) {
+        headerPages.push(page);
+      } else if (followingPageNumbers.has(page.pageNumber)) {
+        followingPages.push(page);
+      } else if (scheduleCPageNumbers.has(page.pageNumber)) {
+        scheduleCPages.push(page);
+      } else {
+        otherPages.push(page);
+      }
+    }
+
+    logger.debug('1040 page prioritization', {
+      total_pages: pages.length,
+      header_pages: Array.from(headerPageNumbers).sort((a, b) => a - b),
+      following_pages: Array.from(followingPageNumbers).sort((a, b) => a - b),
+      schedule_c_pages: Array.from(scheduleCPageNumbers).sort((a, b) => a - b),
+    });
+
+    // Return: header pages first, then their following pages, then Schedule C, then others
+    return [...headerPages, ...followingPages, ...scheduleCPages, ...otherPages];
+  }
+
+  // For other document types, just return pages as-is
+  return pages;
+}
+
+/**
+ * Format page text for extraction with smart truncation for long documents.
+ */
+function formatPageTextWithLimit(pages: PageText[], documentType: DocumentType): string {
+  const prioritized = prioritizePages(pages, documentType);
+  let result = '';
+  let includedPages = 0;
+
+  // For multi-year 1040s, ensure we include at least 4 pages (both years' headers)
+  const minPages = documentType === 'tax_return_1040' ? 4 : 2;
+
+  for (const page of prioritized) {
+    const pageText = `--- Page ${page.pageNumber} ---\n${page.text}\n\n`;
+
+    if (result.length + pageText.length <= MAX_EXTRACTION_CHARS) {
+      result += pageText;
+      includedPages++;
+    } else if (includedPages < minPages) {
+      // Always include minimum required pages, truncating if needed
+      const remaining = MAX_EXTRACTION_CHARS - result.length;
+      if (remaining > 500) {
+        result += `--- Page ${page.pageNumber} ---\n${page.text.slice(0, remaining - 100)}\n[...truncated]\n\n`;
+        includedPages++;
+      }
+      break;
+    } else {
+      // Add note about truncation
+      result += `\n[Document truncated - ${pages.length - includedPages} additional pages not shown]\n`;
+      break;
+    }
+  }
+
+  return result;
+}
+
+/**
  * STEP 1: Classify document type using fast model
  */
 export async function classifyDocument(
@@ -321,6 +496,9 @@ async function extractWithTemplate(
     .replace('{{source_filename}}', documentInfo.source_filename)
     .replace('{{page_text}}', pageText);
 
+  // Debug: write prompts to disk for inspection
+  debugWritePrompts(documentInfo, documentType, pageText, template.systemPrompt, userPrompt);
+
   logger.info('Extracting facts with template', {
     model: extractionModel,
     document_id: documentInfo.document_id,
@@ -400,14 +578,25 @@ export async function extractWithLlm(
   model: string;
   classification: ClassificationWithMetadata;
 }> {
-  // Format page text once
-  const pageText = formatPageText(pages);
+  // Format full page text for classification (needs accurate doc type detection)
+  const fullPageText = formatPageText(pages);
 
-  // STEP 1: Classify document type
-  const classification = await classifyDocument(pageText, documentInfo);
+  // STEP 1: Classify document type using full text
+  const classification = await classifyDocument(fullPageText, documentInfo);
 
   // STEP 2: Extract with document-specific template
-  const extraction = await extractWithTemplate(pageText, documentInfo, classification.document_type);
+  // Use smart truncation for long documents (prioritizes important pages)
+  const extractionText = formatPageTextWithLimit(pages, classification.document_type);
+
+  logger.debug('Extraction text preparation', {
+    document_id: documentInfo.document_id,
+    document_type: classification.document_type,
+    full_text_length: fullPageText.length,
+    extraction_text_length: extractionText.length,
+    truncated: extractionText.length < fullPageText.length,
+  });
+
+  const extraction = await extractWithTemplate(extractionText, documentInfo, classification.document_type);
 
   return {
     ...extraction,

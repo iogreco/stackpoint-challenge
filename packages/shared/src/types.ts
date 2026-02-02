@@ -34,6 +34,9 @@ export type EvidenceSourceContext =
   | 'paystub_employee_info_block'
   | 'paystub_header_employer_block'
   | 'w2_employer_address_block'
+  // SSN contexts
+  | 'tax_return_1040_taxpayer_ssn'
+  | 'w2_employee_ssn'
   // Income contexts
   | 'w2_wages_boxes_annual'
   | 'tax_return_1040_schedule_c_net_profit'

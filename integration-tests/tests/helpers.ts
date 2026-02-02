@@ -54,7 +54,7 @@ export async function syncAndWait(
     throw new Error(`Sync failed: ${syncResponse.status}`);
   }
 
-  const syncData = await syncResponse.json();
+  const syncData = await syncResponse.json() as { correlation_id: string };
   const correlationId = syncData.correlation_id;
 
   // Wait for processing to complete
@@ -82,7 +82,7 @@ export async function getBorrowers(
     throw new Error(`Get borrowers failed: ${response.status}`);
   }
 
-  const data = await response.json();
+  const data = await response.json() as { items: any[] };
   return data.items;
 }
 

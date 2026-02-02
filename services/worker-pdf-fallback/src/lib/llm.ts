@@ -9,6 +9,7 @@
  */
 
 import fs from 'fs';
+import path from 'path';
 import OpenAI from 'openai';
 import {
   logger,
@@ -31,6 +32,56 @@ import {
 } from '@stackpoint/shared';
 
 const PROMPT_VERSION = '4.0.0-two-step';
+
+/**
+ * Debug: Write LLM prompts to temp folder for inspection.
+ * Enable by setting DEBUG_LLM_PROMPTS=1 and optionally DEBUG_LLM_PROMPTS_DIR=/path/to/dir
+ */
+function debugWritePrompts(
+  documentInfo: DocumentInfo,
+  documentType: DocumentType,
+  systemPrompt: string,
+  userPrompt: string,
+  pdfPath: string
+): void {
+  if (!process.env.DEBUG_LLM_PROMPTS) return;
+
+  const debugDir = process.env.DEBUG_LLM_PROMPTS_DIR || '/tmp/llm-debug';
+
+  try {
+    if (!fs.existsSync(debugDir)) {
+      fs.mkdirSync(debugDir, { recursive: true });
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const baseFilename = `${timestamp}_${documentInfo.document_id}_pdf_fallback`;
+
+    // Write the full system prompt
+    fs.writeFileSync(
+      path.join(debugDir, `${baseFilename}_system_prompt.txt`),
+      systemPrompt
+    );
+
+    // Write the full user prompt
+    fs.writeFileSync(
+      path.join(debugDir, `${baseFilename}_user_prompt.txt`),
+      `Document ID: ${documentInfo.document_id}\n` +
+      `Source: ${documentInfo.source_filename}\n` +
+      `Document Type: ${documentType}\n` +
+      `PDF Path: ${pdfPath}\n` +
+      `${'='.repeat(80)}\n\n` +
+      userPrompt
+    );
+
+    logger.info('Debug: wrote PDF fallback prompts to disk', {
+      debug_dir: debugDir,
+      document_id: documentInfo.document_id,
+      files: [`${baseFilename}_system_prompt.txt`, `${baseFilename}_user_prompt.txt`],
+    });
+  } catch (err) {
+    logger.warn('Debug: failed to write PDF fallback prompts', { error: String(err) });
+  }
+}
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || config.openaiApiKey,
@@ -78,6 +129,8 @@ const FACT_EXTRACTION_SCHEMA = {
               'paystub_employee_info_block',
               'paystub_header_employer_block',
               'w2_employer_address_block',
+              'tax_return_1040_taxpayer_ssn',
+              'w2_employee_ssn',
               'w2_wages_boxes_annual',
               'tax_return_1040_schedule_c_net_profit',
               'paystub_ytd_rate_of_pay',
@@ -362,6 +415,9 @@ async function extractWithVisionTemplate(
 
 ${previousResultStr}`
     );
+
+  // Debug: write prompts to disk for inspection
+  debugWritePrompts(documentInfo, documentType, template.systemPrompt, userPrompt, pdfPath);
 
   logger.info('Extracting facts from PDF with template', {
     model: extractionModel,

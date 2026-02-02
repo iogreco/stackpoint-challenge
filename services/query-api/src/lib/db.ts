@@ -53,9 +53,38 @@ function normIncomeKey(row: { source_type: string; employer?: string; period_yea
   return `${row.source_type}|${e}|${row.period_year}`;
 }
 
+/**
+ * Normalize identifier key for grouping.
+ * For SSNs, group by last 4 digits to merge masked (xxx-xx-5000) with unmasked (999-40-5000) versions.
+ */
 function normIdKey(row: { identifier_type: string; identifier_value: string }): string {
   const v = (row.identifier_value ?? '').trim().replace(/[\s-]+/g, '');
+
+  // For SSNs, use only last 4 digits for grouping to merge masked/unmasked versions
+  if (row.identifier_type === 'ssn') {
+    const last4 = v.slice(-4);
+    return `${row.identifier_type}|last4:${last4}`;
+  }
+
   return `${row.identifier_type}|${v}`;
+}
+
+/**
+ * Check if an SSN value is masked (contains x characters).
+ */
+function isMaskedSsn(value: string): boolean {
+  return /x/i.test(value);
+}
+
+/**
+ * Compare two SSN values and return the "better" one (unmasked preferred).
+ */
+function preferUnmaskedSsn(current: string, candidate: string): string {
+  // Prefer unmasked over masked
+  if (isMaskedSsn(current) && !isMaskedSsn(candidate)) return candidate;
+  if (!isMaskedSsn(current) && isMaskedSsn(candidate)) return current;
+  // If both same type, prefer longer/more complete
+  return current.length >= candidate.length ? current : candidate;
 }
 
 /**
@@ -350,6 +379,10 @@ async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
     };
     if (!identifierGroups.has(key)) {
       identifierGroups.set(key, { type: row.identifier_type, value: row.identifier_value, evidence: [] });
+    } else if (row.identifier_type === 'ssn') {
+      // For SSNs, prefer the unmasked value when merging
+      const group = identifierGroups.get(key)!;
+      group.value = preferUnmaskedSsn(group.value, row.identifier_value);
     }
     identifierGroups.get(key)!.evidence.push(ev);
   }
@@ -542,6 +575,10 @@ async function assembleApplicationRecord(application: any): Promise<ApplicationR
     };
     if (!appIdGroups.has(key)) {
       appIdGroups.set(key, { type: row.identifier_type, value: row.identifier_value, evidence: [] });
+    } else if (row.identifier_type === 'ssn') {
+      // For SSNs, prefer the unmasked value when merging
+      const group = appIdGroups.get(key)!;
+      group.value = preferUnmaskedSsn(group.value, row.identifier_value);
     }
     appIdGroups.get(key)!.evidence.push(ev);
   }

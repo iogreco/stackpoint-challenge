@@ -39,6 +39,7 @@ For each fact provide:
 - names_in_proximity: The employee name with proximity_score 3 (same document section)
 
 evidence_source_context values for W-2:
+- w2_employee_ssn: Employee SSN (Box a) - use for SSN facts
 - w2_employee_address_block: Employee address (Box f)
 - w2_employer_address_block: Employer address (Box c) - use for employer_name facts only
 - w2_wages_boxes_annual: Wage boxes (Box 1, etc.)
