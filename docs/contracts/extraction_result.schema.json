@@ -66,7 +66,7 @@
         "prompt_version": { "type": "string", "minLength": 1 },
         "document_type": {
           "type": "string",
-          "enum": ["w2", "paystub", "bank_statement", "closing_disclosure", "tax_return_1040", "evoe", "unknown"],
+          "enum": ["w2", "paystub", "bank_statement", "closing_disclosure", "tax_return_1040", "evoe", "transmittal_summary", "letter_of_explanation", "title_report", "unknown"],
           "description": "Classified document type used to select extraction template"
         },
         "classification_model": {
@@ -139,8 +139,8 @@
         "street1": { "type": "string" },
         "street2": { "type": "string" },
         "city": { "type": "string" },
-        "state": { "type": "string", "minLength": 2, "maxLength": 2 },
-        "zip": { "type": "string", "pattern": "^[0-9]{5}(-[0-9]{4})?$" }
+        "state": { "type": "string" },
+        "zip": { "type": "string" }
       }
     },
     "income_period": {
@@ -149,8 +149,8 @@
       "required": ["year"],
       "properties": {
         "year": { "type": "integer", "minimum": 1900, "maximum": 2100 },
-        "start_date": { "type": "string", "format": "date" },
-        "end_date": { "type": "string", "format": "date" }
+        "start_date": { "type": "string" },
+        "end_date": { "type": "string" }
       }
     },
     "fact_income_value": {
@@ -159,7 +159,7 @@
       "required": ["amount", "currency", "period"],
       "properties": {
         "amount": { "type": "number" },
-        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "currency": { "type": "string" },
         "frequency": {
           "type": "string",
           "enum": ["annual", "monthly", "biweekly", "weekly", "daily", "unknown"]

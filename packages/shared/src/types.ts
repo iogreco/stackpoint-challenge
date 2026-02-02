@@ -16,6 +16,8 @@ export type DocumentType =
   | 'tax_return_1040'
   | 'evoe'
   | 'transmittal_summary'
+  | 'letter_of_explanation'
+  | 'title_report'
   | 'unknown';
 
 // ============================================================================

@@ -22,6 +22,8 @@ Document types:
 - tax_return_1040: IRS Form 1040 tax return. Shows filing status, income, deductions, tax calculations.
 - evoe: Employment Verification (VOE). Employer verification of employment dates, salary, position.
 - transmittal_summary: Uniform Underwriting and Transmittal Summary (Form 1008). Contains subject property info, loan summary, borrower names. Shows "Uniform Underwriting and Transmittal Summary" or "Form 1008" in header.
+- letter_of_explanation: Letter of Explanation written by borrower. Personal letter explaining circumstances (employment gaps, credit issues, large deposits). Contains "Letter of Explanation", "To Whom It May Concern", or similar personal letter format.
+- title_report: Title Report or Title Commitment. Contains property title history, ownership chain, legal description, liens. Shows "Title Report", "Title Commitment", "Title Insurance", or "Schedule A/B".
 - unknown: Cannot determine document type from preview.
 
 Return the most likely document type and your confidence (0-1).`;
@@ -50,7 +52,7 @@ export const CLASSIFICATION_SCHEMA = {
     properties: {
       document_type: {
         type: 'string',
-        enum: ['w2', 'paystub', 'bank_statement', 'closing_disclosure', 'tax_return_1040', 'evoe', 'transmittal_summary', 'unknown'],
+        enum: ['w2', 'paystub', 'bank_statement', 'closing_disclosure', 'tax_return_1040', 'evoe', 'transmittal_summary', 'letter_of_explanation', 'title_report', 'unknown'],
         description: 'The identified document type',
       },
       confidence: {
@@ -78,5 +80,7 @@ export const DOCUMENT_TYPE_NAMES: Record<DocumentType, string> = {
   tax_return_1040: 'Tax Return (1040)',
   evoe: 'Employment Verification',
   transmittal_summary: 'Uniform Underwriting and Transmittal Summary (Form 1008)',
+  letter_of_explanation: 'Letter of Explanation',
+  title_report: 'Title Report',
   unknown: 'Unknown Document',
 };

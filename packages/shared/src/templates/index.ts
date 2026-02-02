@@ -28,6 +28,8 @@ import { CLOSING_DISCLOSURE_TEMPLATE } from './closing-disclosure.template';
 import { TAX_RETURN_1040_TEMPLATE } from './tax-return-1040.template';
 import { EVOE_TEMPLATE } from './evoe.template';
 import { TRANSMITTAL_SUMMARY_TEMPLATE } from './transmittal-summary.template';
+import { LETTER_OF_EXPLANATION_TEMPLATE } from './letter-of-explanation.template';
+import { TITLE_REPORT_TEMPLATE } from './title-report.template';
 import { UNKNOWN_TEMPLATE } from './unknown.template';
 
 // Export individual templates
@@ -39,6 +41,8 @@ export {
   TAX_RETURN_1040_TEMPLATE,
   EVOE_TEMPLATE,
   TRANSMITTAL_SUMMARY_TEMPLATE,
+  LETTER_OF_EXPLANATION_TEMPLATE,
+  TITLE_REPORT_TEMPLATE,
   UNKNOWN_TEMPLATE,
 };
 
@@ -53,6 +57,8 @@ const TEMPLATES: Record<DocumentType, ExtractionTemplate> = {
   tax_return_1040: TAX_RETURN_1040_TEMPLATE,
   evoe: EVOE_TEMPLATE,
   transmittal_summary: TRANSMITTAL_SUMMARY_TEMPLATE,
+  letter_of_explanation: LETTER_OF_EXPLANATION_TEMPLATE,
+  title_report: TITLE_REPORT_TEMPLATE,
   unknown: UNKNOWN_TEMPLATE,
 };
 
