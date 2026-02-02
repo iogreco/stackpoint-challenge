@@ -65,9 +65,9 @@ export async function getBorrowerById(borrowerId: string): Promise<BorrowerRecor
   const startTime = Date.now();
 
   try {
-    // Get borrower base info
+    // Get borrower base info (no borrower_key or root zip; zip is only in addresses)
     const borrowerResult = await pool.query(
-      `SELECT borrower_id, borrower_key, status, full_name, zip, last_correlation_id, updated_at
+      `SELECT borrower_id, status, full_name, last_correlation_id, updated_at
        FROM borrowers WHERE borrower_id = $1`,
       [borrowerId]
     );
@@ -115,7 +115,7 @@ export async function searchBorrowers(
     }
 
     if (filters.zip) {
-      conditions.push(`zip = $${paramIndex}`);
+      conditions.push(`borrower_id IN (SELECT borrower_id FROM borrower_addresses WHERE zip = $${paramIndex})`);
       params.push(filters.zip);
       paramIndex++;
     }
@@ -138,7 +138,7 @@ export async function searchBorrowers(
     const limitClause = `LIMIT $${paramIndex}`;
 
     const query = `
-      SELECT borrower_id, borrower_key, status, full_name, zip, last_correlation_id, updated_at
+      SELECT borrower_id, status, full_name, last_correlation_id, updated_at
       FROM borrowers
       ${whereClause}
       ORDER BY borrower_id
@@ -205,7 +205,7 @@ async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
   // Get addresses with evidence; group by logical address and compute confidence
   const addressesResult = await pool.query(
     `SELECT ba.address_type, ba.street1, ba.street2, ba.city, ba.state, ba.zip,
-            d.document_id, d.source_filename, ba.page_number, ba.quote, ba.evidence_source_context
+            d.document_id, d.source_filename, ba.page_number, ba.quote, ba.evidence_source_context, ba.proximity_score
      FROM borrower_addresses ba
      JOIN documents d ON ba.document_id = d.document_id
      WHERE ba.borrower_id = $1
@@ -225,6 +225,7 @@ async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
       page_number: row.page_number,
       quote: row.quote,
       ...(row.evidence_source_context != null && { evidence_source_context: row.evidence_source_context as EvidenceSourceContext }),
+      ...(row.proximity_score != null && { proximity_score: row.proximity_score }),
     };
     if (!addressGroups.has(key)) {
       addressGroups.set(key, {
@@ -264,7 +265,7 @@ async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
   // Get income history with evidence; group by income_identity_key and compute confidence
   const incomesResult = await pool.query(
     `SELECT bi.source_type, bi.employer, bi.period_year, bi.amount, bi.currency, bi.frequency,
-            d.document_id, d.source_filename, bi.page_number, bi.quote, bi.evidence_source_context
+            d.document_id, d.source_filename, bi.page_number, bi.quote, bi.evidence_source_context, bi.proximity_score
      FROM borrower_incomes bi
      JOIN documents d ON bi.document_id = d.document_id
      WHERE bi.borrower_id = $1
@@ -292,6 +293,7 @@ async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
       page_number: row.page_number,
       quote: row.quote,
       ...(row.evidence_source_context != null && { evidence_source_context: row.evidence_source_context as EvidenceSourceContext }),
+      ...(row.proximity_score != null && { proximity_score: row.proximity_score }),
     };
     if (!incomeGroups.has(key)) {
       incomeGroups.set(key, {
@@ -324,7 +326,7 @@ async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
   // Get identifiers with evidence; group by type + value and compute confidence (conflict domain = same type)
   const identifiersResult = await pool.query(
     `SELECT bi.identifier_type, bi.identifier_value,
-            d.document_id, d.source_filename, bi.page_number, bi.quote, bi.evidence_source_context
+            d.document_id, d.source_filename, bi.page_number, bi.quote, bi.evidence_source_context, bi.proximity_score
      FROM borrower_identifiers bi
      JOIN documents d ON bi.document_id = d.document_id
      WHERE bi.borrower_id = $1
@@ -344,6 +346,7 @@ async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
       page_number: row.page_number,
       quote: row.quote,
       ...(row.evidence_source_context != null && { evidence_source_context: row.evidence_source_context as EvidenceSourceContext }),
+      ...(row.proximity_score != null && { proximity_score: row.proximity_score }),
     };
     if (!identifierGroups.has(key)) {
       identifierGroups.set(key, { type: row.identifier_type, value: row.identifier_value, evidence: [] });
@@ -374,7 +377,7 @@ async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
   // Get application links with evidence
   const applicationsResult = await pool.query(
     `SELECT a.application_id, a.loan_number, ap.role,
-            ape.document_id, d.source_filename, ape.page_number, ape.quote, ape.evidence_source_context
+            ape.document_id, d.source_filename, ape.page_number, ape.quote, ape.evidence_source_context, ape.proximity_score
      FROM application_parties ap
      JOIN applications a ON ap.application_id = a.application_id
      LEFT JOIN application_party_evidence ape ON ap.application_id = ape.application_id AND ap.borrower_id = ape.borrower_id
@@ -396,6 +399,7 @@ async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
             page_number: row.page_number,
             quote: row.quote,
             ...(row.evidence_source_context != null && { evidence_source_context: row.evidence_source_context }),
+            ...(row.proximity_score != null && { proximity_score: row.proximity_score }),
           },
         ]
       : [],
@@ -422,10 +426,8 @@ async function assembleBorrowerRecord(borrower: any): Promise<BorrowerRecord> {
   const record: BorrowerRecord = {
     schema_version: '1.1.0',
     borrower_id: borrower.borrower_id,
-    borrower_key: borrower.borrower_key,
     status: borrower.status,
     full_name: borrower.full_name,
-    zip: borrower.zip,
     addresses,
     income_history,
     identifiers,
@@ -447,7 +449,7 @@ async function assembleApplicationRecord(application: any): Promise<ApplicationR
   // Get property address with evidence; group by logical address and compute confidence
   const addressResult = await pool.query(
     `SELECT aa.street1, aa.street2, aa.city, aa.state, aa.zip,
-            d.document_id, d.source_filename, aa.page_number, aa.quote, aa.evidence_source_context
+            d.document_id, d.source_filename, aa.page_number, aa.quote, aa.evidence_source_context, aa.proximity_score
      FROM application_addresses aa
      JOIN documents d ON aa.document_id = d.document_id
      WHERE aa.application_id = $1
@@ -466,6 +468,7 @@ async function assembleApplicationRecord(application: any): Promise<ApplicationR
         page_number: row.page_number,
         quote: row.quote,
         ...(row.evidence_source_context != null && { evidence_source_context: row.evidence_source_context as EvidenceSourceContext }),
+        ...(row.proximity_score != null && { proximity_score: row.proximity_score }),
       };
       if (!addrGroups.has(key)) {
         addrGroups.set(key, {
@@ -518,7 +521,7 @@ async function assembleApplicationRecord(application: any): Promise<ApplicationR
   // Get identifiers with evidence; group by type+value and compute confidence
   const identifiersResult = await pool.query(
     `SELECT ai.identifier_type, ai.identifier_value,
-            d.document_id, d.source_filename, ai.page_number, ai.quote, ai.evidence_source_context
+            d.document_id, d.source_filename, ai.page_number, ai.quote, ai.evidence_source_context, ai.proximity_score
      FROM application_identifiers ai
      JOIN documents d ON ai.document_id = d.document_id
      WHERE ai.application_id = $1
@@ -535,6 +538,7 @@ async function assembleApplicationRecord(application: any): Promise<ApplicationR
       page_number: row.page_number,
       quote: row.quote,
       ...(row.evidence_source_context != null && { evidence_source_context: row.evidence_source_context as EvidenceSourceContext }),
+      ...(row.proximity_score != null && { proximity_score: row.proximity_score }),
     };
     if (!appIdGroups.has(key)) {
       appIdGroups.set(key, { type: row.identifier_type, value: row.identifier_value, evidence: [] });

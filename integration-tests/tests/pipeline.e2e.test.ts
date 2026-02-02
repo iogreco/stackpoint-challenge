@@ -167,9 +167,7 @@ describe('Full Pipeline Integration', () => {
     const borrower = borrowers[0];
     expect(borrower.schema_version).toBe('1.1.0');
     expect(borrower.borrower_id).toBeDefined();
-    expect(borrower.borrower_key).toBeDefined();
     expect(borrower.full_name).toBeDefined();
-    expect(borrower.zip).toBeDefined();
     expect(borrower.status).toMatch(/^(COMPLETE|PARTIAL)$/);
   });
 
@@ -190,7 +188,6 @@ describe('Full Pipeline Integration', () => {
 
     // Compare key fields (not exact match due to LLM variance)
     expect(normalized.full_name).toBe(goldenNormalized.full_name);
-    expect(normalized.zip).toBe(goldenNormalized.zip);
     expect(normalized.status).toBe(goldenNormalized.status);
   });
 });

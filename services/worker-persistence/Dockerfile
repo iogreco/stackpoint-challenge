@@ -39,17 +39,17 @@ COPY services/worker-persistence/package*.json ./services/worker-persistence/
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/services/worker-persistence/dist ./services/worker-persistence/dist
 
-# Copy migrations (from source, not built)
-COPY services/worker-persistence/src/migrations ./services/worker-persistence/src/migrations
+# Copy schema (from source, not built)
+COPY services/worker-persistence/src/schema ./services/worker-persistence/src/schema
 
 # Copy docs for schema validation
 COPY docs/contracts ./docs/contracts
 
 # Install production dependencies
 WORKDIR /app/services/worker-persistence
-RUN npm install --omit=dev
+RUN npm install --omit=dev --ignore-scripts
 
 WORKDIR /app
 
-# Run migrations then start worker
-CMD ["sh", "-c", "node services/worker-persistence/dist/migrate.js && node services/worker-persistence/dist/index.js"]
+# Run schema init then start worker (one-time when starting from scratch)
+CMD ["sh", "-c", "node services/worker-persistence/dist/init-db.js && node services/worker-persistence/dist/index.js"]

@@ -2,9 +2,9 @@
  * Database Operations
  *
  * Handles upserts for borrowers, applications, and related data.
+ * Borrower identity is borrower_id only; zip/address/SSN are facts in substructures used for match/merge.
  */
 
-import crypto from 'crypto';
 import { Pool, PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -22,14 +22,6 @@ const pool = new Pool({
   max: 20,
   idleTimeoutMillis: 30000,
 });
-
-/**
- * Compute borrower_key from normalized name and zip
- */
-export function computeBorrowerKey(fullName: string, zip: string): string {
-  const normalized = `${fullName.toLowerCase().trim()}|${zip.trim()}`;
-  return crypto.createHash('sha256').update(normalized).digest('hex').substring(0, 32);
-}
 
 /** Normalize name for matching: trim, lowercase, collapse internal spaces. */
 function normalizeName(fullName: string): string {
@@ -114,10 +106,6 @@ function addressMeaningfulPortionMatch(
   return false;
 }
 
-/** Match threshold: at least one strong signal OR at least two medium signals. */
-const MATCH_STRONG_THRESHOLD = 1;
-const MATCH_MEDIUM_THRESHOLD = 2;
-
 /** Normalize address for "same" comparison: lowercase, collapse spaces, strip punctuation. */
 function normalizeAddressKey(addr: {
   street1?: string | null;
@@ -168,6 +156,12 @@ export async function persistExtractionResult(
     await client.query('BEGIN');
 
     const { document, borrowers, applications } = extractionResult;
+
+    // Serialize by normalized borrower name so concurrent jobs for same person don't all create new rows
+    const namesToLock = [...new Set(borrowers.map((b) => normalizeName(b.full_name.value)))];
+    for (const name of namesToLock) {
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [name]);
+    }
 
     // Step 1: Upsert document
     await upsertDocument(client, document, correlationId);
@@ -232,6 +226,7 @@ async function upsertDocument(
 
 /**
  * Resolve borrower: find existing by name + partial match, or create new.
+ * Caller must hold advisory lock for this normalized name (taken at transaction start).
  */
 async function resolveBorrowerId(
   client: PoolClient,
@@ -243,22 +238,25 @@ async function resolveBorrowerId(
   const normalizedName = normalizeName(fullName);
   const status = borrower.missing_fields.length === 0 ? 'COMPLETE' : 'PARTIAL';
 
-  // Candidates: same normalized full name
+  // Candidates: same normalized full name (zip/SSN/address are match signals from substructures)
   const candidatesResult = await client.query(
-    `SELECT borrower_id, full_name, zip
+    `SELECT borrower_id, full_name
      FROM borrowers
      WHERE LOWER(TRIM(REGEXP_REPLACE(full_name, E'\\s+', ' ', 'g'))) = $1`,
     [normalizedName]
   );
 
   if (candidatesResult.rows.length === 0) {
-    const borrowerKey = computeBorrowerKey(fullName, zip);
     const result = await client.query(
-      `INSERT INTO borrowers (borrower_key, status, full_name, zip, last_correlation_id, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
+      `INSERT INTO borrowers (status, full_name, last_correlation_id, updated_at)
+       VALUES ($1, $2, $3, NOW())
        RETURNING borrower_id`,
-      [borrowerKey, status, fullName, zip, correlationId]
+      [status, fullName, correlationId]
     );
+    logger.info('Resolve borrower: no candidates, created new', {
+      normalizedName,
+      borrower_id: result.rows[0].borrower_id,
+    });
     return { borrowerId: result.rows[0].borrower_id, isNew: true };
   }
 
@@ -272,7 +270,7 @@ async function resolveBorrowerId(
     [candidateIds]
   );
   const addressesResult = await client.query(
-    `SELECT borrower_id, street1, city, state, zip
+    `SELECT borrower_id, street1, city, state, zip, proximity_score
      FROM borrower_addresses
      WHERE borrower_id = ANY($1::uuid[])`,
     [candidateIds]
@@ -286,7 +284,7 @@ async function resolveBorrowerId(
   }
   const addressesByBorrower = new Map<
     string,
-    { street1?: string; city?: string; state?: string; zip?: string }[]
+    { street1?: string; city?: string; state?: string; zip?: string; proximity_score?: number | null }[]
   >();
   for (const row of addressesResult.rows) {
     const list = addressesByBorrower.get(row.borrower_id) || [];
@@ -295,72 +293,76 @@ async function resolveBorrowerId(
       city: row.city,
       state: row.state,
       zip: row.zip,
+      proximity_score: row.proximity_score ?? undefined,
     });
     addressesByBorrower.set(row.borrower_id, list);
   }
 
-  let bestId: string | null = null;
-  let bestStrong = 0;
-  let bestMedium = 0;
+  /** Strong conflict: merge would wrongly merge a different person (inverted matching: split only on strong conflict). */
+  function hasStrongConflict(
+    candId: string,
+    payload: BorrowerExtraction,
+    idsByBorrower: Map<string, { identifier_type: string; identifier_value: string }[]>,
+    addrsByBorrower: Map<string, { street1?: string; city?: string; state?: string; zip?: string; proximity_score?: number | null }[]>
+  ): boolean {
+    const existingIds = idsByBorrower.get(candId) || [];
+    const existingAddrs = addrsByBorrower.get(candId) || [];
+    const candidateHasHighProximityAddress = existingAddrs.some((a) => (a.proximity_score ?? 0) >= 2);
 
-  for (const cand of candidatesResult.rows) {
-    let strongCount = 0;
-    let mediumCount = 0;
-
-    if (zipMatch(zip, cand.zip)) mediumCount++;
-
-    const existingIds = identifiersByBorrower.get(cand.borrower_id) || [];
-    for (const payloadId of borrower.identifiers) {
-      if (existingIds.some((ex) => identifierMatch(payloadId, ex))) {
-        strongCount++;
-        break;
-      }
+    // SSN conflict: payload has SSN with proximity_score 3 that does not overlap any existing SSN
+    for (const id of payload.identifiers) {
+      if (id.type !== 'ssn') continue;
+      const prox = id.evidence?.[0]?.proximity_score;
+      if (prox !== 3) continue;
+      const overlaps = existingIds.some(
+        (ex) => ex.identifier_type === 'ssn' && ssnOverlap(id.value, ex.identifier_value)
+      );
+      if (!overlaps) return true;
     }
 
-    const existingAddrs = addressesByBorrower.get(cand.borrower_id) || [];
-    for (const payloadAddr of borrower.addresses) {
-      const v = payloadAddr.value;
-      if (v && existingAddrs.some((ex) => addressMeaningfulPortionMatch(v, ex))) {
-        mediumCount++;
-        break;
-      }
+    // Address conflict: payload has address with proximity >= 2, candidate has address with proximity >= 2, and payload address (city+state or zip+state) differs from all high-proximity candidate addresses
+    if (!candidateHasHighProximityAddress) return false;
+    const candidateHighProximityAddrs = existingAddrs.filter((a) => (a.proximity_score ?? 0) >= 2);
+    for (const addr of payload.addresses) {
+      const prox = addr.evidence?.[0]?.proximity_score ?? 0;
+      if (prox < 2) continue;
+      const v = addr.value;
+      if (!v) continue;
+      const sameAsAny = candidateHighProximityAddrs.some((ex) => addressMeaningfulPortionMatch(v, ex));
+      if (!sameAsAny) return true;
     }
-
-    const meetsThreshold =
-      strongCount >= MATCH_STRONG_THRESHOLD || mediumCount >= MATCH_MEDIUM_THRESHOLD;
-    const isBetter =
-      strongCount > bestStrong || (strongCount === bestStrong && mediumCount > bestMedium);
-    if (meetsThreshold && (bestId === null || isBetter)) {
-      bestStrong = strongCount;
-      bestMedium = mediumCount;
-      bestId = cand.borrower_id;
-    }
+    return false;
   }
 
-  if (
-    bestId &&
-    (bestStrong >= MATCH_STRONG_THRESHOLD || bestMedium >= MATCH_MEDIUM_THRESHOLD)
-  ) {
+  const mergeCandidates = candidatesResult.rows.filter(
+    (c) => !hasStrongConflict(c.borrower_id, borrower, identifiersByBorrower, addressesByBorrower)
+  );
+
+  if (mergeCandidates.length > 0) {
+    const bestId = mergeCandidates[0].borrower_id;
     await client.query(
       `UPDATE borrowers SET status = CASE WHEN $2 = 'COMPLETE' OR status = 'COMPLETE' THEN 'COMPLETE' ELSE 'PARTIAL' END, last_correlation_id = $3, updated_at = NOW() WHERE borrower_id = $1`,
       [bestId, status, correlationId]
     );
+    logger.info('Resolve borrower: merged (no strong conflict)', {
+      normalizedName,
+      borrower_id: bestId,
+      candidates_without_conflict: mergeCandidates.length,
+    });
     return { borrowerId: bestId, isNew: false };
   }
 
-  const borrowerKey = computeBorrowerKey(fullName, zip);
   const result = await client.query(
-    `INSERT INTO borrowers (borrower_key, status, full_name, zip, last_correlation_id, updated_at)
-     VALUES ($1, $2, $3, $4, $5, NOW())
-     ON CONFLICT (borrower_key) DO UPDATE SET
-       status = CASE WHEN EXCLUDED.status = 'COMPLETE' OR borrowers.status = 'COMPLETE' THEN 'COMPLETE' ELSE 'PARTIAL' END,
-       full_name = EXCLUDED.full_name,
-       zip = EXCLUDED.zip,
-       last_correlation_id = EXCLUDED.last_correlation_id,
-       updated_at = NOW()
+    `INSERT INTO borrowers (status, full_name, last_correlation_id, updated_at)
+     VALUES ($1, $2, $3, NOW())
      RETURNING borrower_id`,
-    [borrowerKey, status, fullName, zip, correlationId]
+    [status, fullName, correlationId]
   );
+  logger.info('Resolve borrower: strong conflict with all candidates, created new', {
+    normalizedName,
+    borrower_id: result.rows[0].borrower_id,
+    candidates: candidatesResult.rows.length,
+  });
   return { borrowerId: result.rows[0].borrower_id, isNew: true };
 }
 
@@ -425,8 +427,8 @@ async function upsertBorrower(
       });
     }
     await client.query(
-      `INSERT INTO borrower_addresses (borrower_id, address_type, street1, street2, city, state, zip, document_id, page_number, quote, evidence_source_context)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      `INSERT INTO borrower_addresses (borrower_id, address_type, street1, street2, city, state, zip, document_id, page_number, quote, evidence_source_context, proximity_score)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
         borrowerId,
         addr.type,
@@ -439,6 +441,7 @@ async function upsertBorrower(
         evidence.page_number,
         evidence.quote,
         evidence.evidence_source_context ?? null,
+        evidence.proximity_score ?? null,
       ]
     );
   }
@@ -482,8 +485,8 @@ async function upsertBorrower(
       existingIncomeCanonical.set(key, { employer, amount, currency, frequency });
     }
     await client.query(
-      `INSERT INTO borrower_incomes (borrower_id, source_type, employer, period_year, amount, currency, frequency, document_id, page_number, quote, evidence_source_context)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      `INSERT INTO borrower_incomes (borrower_id, source_type, employer, period_year, amount, currency, frequency, document_id, page_number, quote, evidence_source_context, proximity_score)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
         borrowerId,
         income.source_type,
@@ -496,6 +499,7 @@ async function upsertBorrower(
         evidence.page_number,
         evidence.quote,
         evidence.evidence_source_context ?? null,
+        evidence.proximity_score ?? null,
       ]
     );
   }
@@ -533,8 +537,8 @@ async function upsertBorrower(
     if (!useExisting) existingIdByType.set(id.type, value);
     else if (moreCompleteSsn) existingIdByType.set(id.type, id.value);
     await client.query(
-      `INSERT INTO borrower_identifiers (borrower_id, identifier_type, identifier_value, document_id, page_number, quote, evidence_source_context)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      `INSERT INTO borrower_identifiers (borrower_id, identifier_type, identifier_value, document_id, page_number, quote, evidence_source_context, proximity_score)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
         borrowerId,
         id.type,
@@ -543,6 +547,7 @@ async function upsertBorrower(
         evidence.page_number,
         evidence.quote,
         evidence.evidence_source_context ?? null,
+        evidence.proximity_score ?? null,
       ]
     );
   }
@@ -589,8 +594,8 @@ async function upsertApplication(
       logger.warn('Skipping property address without evidence', { applicationId, propAddr });
     } else {
       await client.query(
-      `INSERT INTO application_addresses (application_id, address_type, street1, street2, city, state, zip, document_id, page_number, quote, evidence_source_context)
-       VALUES ($1, 'property', $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      `INSERT INTO application_addresses (application_id, address_type, street1, street2, city, state, zip, document_id, page_number, quote, evidence_source_context, proximity_score)
+       VALUES ($1, 'property', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         applicationId,
         propAddr.value.street1 || null,
@@ -602,6 +607,7 @@ async function upsertApplication(
         evidence.page_number,
         evidence.quote,
         evidence.evidence_source_context ?? null,
+        evidence.proximity_score ?? null,
       ]
     );
     }
@@ -615,8 +621,8 @@ async function upsertApplication(
       continue;
     }
     await client.query(
-      `INSERT INTO application_identifiers (application_id, identifier_type, identifier_value, document_id, page_number, quote, evidence_source_context)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      `INSERT INTO application_identifiers (application_id, identifier_type, identifier_value, document_id, page_number, quote, evidence_source_context, proximity_score)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
         applicationId,
         id.type,
@@ -625,6 +631,7 @@ async function upsertApplication(
         evidence.page_number,
         evidence.quote,
         evidence.evidence_source_context ?? null,
+        evidence.proximity_score ?? null,
       ]
     );
   }
@@ -652,8 +659,8 @@ async function upsertApplication(
     const evidence = application.loan_number.evidence?.[0];
     if (evidence) {
       await client.query(
-        `INSERT INTO application_party_evidence (application_id, borrower_id, document_id, page_number, quote, evidence_source_context)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+        `INSERT INTO application_party_evidence (application_id, borrower_id, document_id, page_number, quote, evidence_source_context, proximity_score)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [
           applicationId,
           borrowerId,
@@ -661,6 +668,7 @@ async function upsertApplication(
           evidence.page_number,
           evidence.quote,
           evidence.evidence_source_context ?? null,
+          evidence.proximity_score ?? null,
         ]
       );
     } else {

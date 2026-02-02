@@ -64,4 +64,9 @@ export {
 } from './metrics';
 
 // Schemas
-export { validateExtraction, validateBorrower, validateApplication, schemas } from './schemas';
+export {
+  validateExtraction,
+  validateBorrower,
+  validateApplication,
+  schemas,
+} from './schemas';

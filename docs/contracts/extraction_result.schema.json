@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://stackpoint.local/schemas/extraction_result.schema.json",
   "title": "ExtractionResult",
+  "description": "Fact-based extraction output per document (facts with names_in_proximity and proximity_score).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -9,21 +10,18 @@
     "correlation_id",
     "document",
     "extraction_mode",
-    "applications",
-    "borrowers",
-    "missing_fields",
+    "facts",
     "extraction_metadata",
     "created_at"
   ],
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "1.1.0"
+      "const": "2.0"
     },
     "correlation_id": {
       "type": "string",
-      "minLength": 1,
-      "description": "Unique ID per processing attempt; used for tracing across pipeline stages."
+      "minLength": 1
     },
     "document": {
       "type": "object",
@@ -36,106 +34,36 @@
         "source_doc_id"
       ],
       "properties": {
-        "document_id": {
-          "type": "string",
-          "minLength": 16,
-          "description": "Stable ID for the document bytes (recommended sha256 hex)."
-        },
-        "source_filename": {
-          "type": "string",
-          "minLength": 1
-        },
-        "raw_uri": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Pointer to raw object store location (local FS in demo; S3/GCS in prod)."
-        },
-        "source_system": {
-          "type": "string",
-          "minLength": 1
-        },
-        "source_doc_id": {
-          "type": "string",
-          "minLength": 1,
-          "description": "External system's identifier for this document (as returned by the adapter list endpoint)."
-        },
-        "discovered_at": {
-          "type": "string",
-          "format": "date-time",
-          "description": "When the adapter discovered this document for processing (UTC)."
-        },
-        "source_updated_at": {
-          "type": "string",
-          "format": "date-time",
-          "description": "External system's last-updated timestamp for this document, if provided (UTC)."
-        }
+        "document_id": { "type": "string", "minLength": 16 },
+        "source_filename": { "type": "string", "minLength": 1 },
+        "raw_uri": { "type": "string", "minLength": 1 },
+        "source_system": { "type": "string", "minLength": 1 },
+        "source_doc_id": { "type": "string", "minLength": 1 },
+        "discovered_at": { "type": "string", "format": "date-time" },
+        "source_updated_at": { "type": "string", "format": "date-time" }
       }
     },
     "extraction_mode": {
       "type": "string",
-      "enum": [
-        "text",
-        "pdf_fallback"
-      ],
-      "description": "text = plain-text extraction; pdf_fallback = full-PDF/vision fallback."
+      "enum": ["text", "pdf_fallback"]
     },
-    "applications": {
+    "facts": {
       "type": "array",
-      "items": {
-        "$ref": "#/$defs/application_extraction"
-      },
-      "description": "Application/loan groupings extracted from the document, if present."
-    },
-    "borrowers": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/borrower_extraction"
-      },
-      "description": "Individual parties (borrower/co-borrower/etc.) identified in the document."
-    },
-    "missing_fields": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/field_name"
-      },
-      "uniqueItems": true,
-      "description": "Top-level missing required fields for this document's extraction."
+      "items": { "$ref": "#/$defs/fact" }
     },
     "warnings": {
       "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "description": "Non-fatal extraction warnings (e.g., conflicting values across pages)."
+      "items": { "type": "string" }
     },
     "extraction_metadata": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "provider",
-        "model",
-        "request_id",
-        "prompt_version"
-      ],
+      "required": ["provider", "model", "request_id", "prompt_version"],
       "properties": {
-        "provider": {
-          "type": "string",
-          "enum": [
-            "openai"
-          ]
-        },
-        "model": {
-          "type": "string",
-          "minLength": 1
-        },
-        "request_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "prompt_version": {
-          "type": "string",
-          "minLength": 1
-        }
+        "provider": { "type": "string", "enum": ["openai"] },
+        "model": { "type": "string", "minLength": 1 },
+        "request_id": { "type": "string", "minLength": 1 },
+        "prompt_version": { "type": "string", "minLength": 1 }
       }
     },
     "created_at": {
@@ -144,48 +72,15 @@
     }
   },
   "$defs": {
-    "field_name": {
-      "type": "string",
-      "enum": [
-        "borrower.full_name",
-        "borrower.zip",
-        "borrower.addresses",
-        "borrower.income_history",
-        "borrower.identifiers",
-        "application.loan_number",
-        "application.property_address",
-        "application.parties"
-      ],
-      "description": "Field identifiers used for completeness checks and reporting."
-    },
     "evidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "document_id",
-        "source_filename",
-        "page_number",
-        "quote"
-      ],
+      "required": ["document_id", "source_filename", "page_number", "quote"],
       "properties": {
-        "document_id": {
-          "type": "string",
-          "minLength": 16
-        },
-        "source_filename": {
-          "type": "string",
-          "minLength": 1
-        },
-        "page_number": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "quote": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 300,
-          "description": "Short snippet anchoring the extracted value (<=300 chars)."
-        },
+        "document_id": { "type": "string", "minLength": 16 },
+        "source_filename": { "type": "string", "minLength": 1 },
+        "page_number": { "type": "integer", "minimum": 1 },
+        "quote": { "type": "string", "minLength": 1, "maxLength": 300 },
         "evidence_source_context": {
           "type": "string",
           "enum": [
@@ -202,352 +97,89 @@
             "evoe_verification",
             "letter_of_explanation",
             "other"
-          ],
-          "description": "Source context for confidence weighting (matching-and-merge-spec §4.4). Use when possible; use 'other' only when unclear."
+          ]
         }
       }
     },
-    "value_with_evidence_string": {
+    "name_in_proximity": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "value",
-        "evidence"
-      ],
+      "required": ["full_name", "evidence", "proximity_score"],
       "properties": {
-        "value": {
-          "type": "string",
-          "minLength": 1
-        },
+        "full_name": { "type": "string", "minLength": 1 },
         "evidence": {
           "type": "array",
           "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/evidence"
-          }
-        }
-      }
-    },
-    "value_with_evidence_zip": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "value",
-        "evidence"
-      ],
-      "properties": {
-        "value": {
-          "type": "string",
-          "pattern": "^[0-9]{5}(-[0-9]{4})?$"
+          "items": { "$ref": "#/$defs/evidence" }
         },
-        "evidence": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/evidence"
-          }
-        }
+        "proximity_score": { "type": "integer", "minimum": 0, "maximum": 3 }
       }
     },
     "address_value": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "zip"
-      ],
+      "required": ["zip"],
       "properties": {
-        "street1": {
-          "type": "string"
-        },
-        "street2": {
-          "type": "string"
-        },
-        "city": {
-          "type": "string"
-        },
-        "state": {
-          "type": "string",
-          "minLength": 2,
-          "maxLength": 2
-        },
-        "zip": {
-          "type": "string",
-          "pattern": "^[0-9]{5}(-[0-9]{4})?$"
-        }
+        "street1": { "type": "string" },
+        "street2": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string", "minLength": 2, "maxLength": 2 },
+        "zip": { "type": "string", "pattern": "^[0-9]{5}(-[0-9]{4})?$" }
       }
     },
-    "address_extraction": {
+    "income_period": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "value",
-        "evidence"
-      ],
+      "required": ["year"],
       "properties": {
-        "type": {
-          "type": "string",
-          "enum": [
-            "current",
-            "previous",
-            "mailing",
-            "property"
-          ]
-        },
-        "value": {
-          "$ref": "#/$defs/address_value"
-        },
-        "evidence": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/evidence"
-          }
-        }
+        "year": { "type": "integer", "minimum": 1900, "maximum": 2100 },
+        "start_date": { "type": "string", "format": "date" },
+        "end_date": { "type": "string", "format": "date" }
       }
     },
-    "income_extraction": {
+    "fact_income_value": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "source_type",
-        "period",
-        "amount",
-        "currency",
-        "evidence"
-      ],
+      "required": ["amount", "currency", "period"],
       "properties": {
-        "source_type": {
-          "type": "string",
-          "enum": [
-            "w2",
-            "paystub",
-            "evoe",
-            "tax_return_1040",
-            "schedule_c",
-            "bank_statement",
-            "other"
-          ]
-        },
-        "employer": {
-          "type": "string"
-        },
-        "period": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "year"
-          ],
-          "properties": {
-            "year": {
-              "type": "integer",
-              "minimum": 1900,
-              "maximum": 2100
-            },
-            "start_date": {
-              "type": "string",
-              "format": "date"
-            },
-            "end_date": {
-              "type": "string",
-              "format": "date"
-            }
-          }
-        },
-        "amount": {
-          "type": "number"
-        },
-        "currency": {
-          "type": "string",
-          "pattern": "^[A-Z]{3}$",
-          "default": "USD"
-        },
+        "amount": { "type": "number" },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
         "frequency": {
           "type": "string",
-          "enum": [
-            "annual",
-            "monthly",
-            "biweekly",
-            "weekly",
-            "daily",
-            "unknown"
-          ],
-          "default": "unknown"
+          "enum": ["annual", "monthly", "biweekly", "weekly", "daily", "unknown"]
         },
-        "evidence": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/evidence"
-          }
+        "period": { "$ref": "#/$defs/income_period" },
+        "employer": { "type": "string" },
+        "source_type": {
+          "type": "string",
+          "enum": ["w2", "paystub", "evoe", "tax_return_1040", "schedule_c", "bank_statement", "other"]
         }
       }
     },
-    "identifier_extraction": {
+    "fact": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "value",
-        "evidence"
-      ],
+      "required": ["fact_type", "value", "evidence", "names_in_proximity"],
       "properties": {
-        "type": {
+        "fact_type": {
           "type": "string",
-          "enum": [
-            "loan_number",
-            "account_number",
-            "ssn",
-            "ein",
-            "other"
-          ]
+          "enum": ["address", "ssn", "income", "loan_number", "employer_name"]
         },
         "value": {
-          "type": "string",
-          "minLength": 1
+          "oneOf": [
+            { "$ref": "#/$defs/address_value" },
+            { "type": "string" },
+            { "$ref": "#/$defs/fact_income_value" }
+          ]
         },
         "evidence": {
           "type": "array",
           "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/evidence"
-          }
-        }
-      }
-    },
-    "borrower_extraction": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "borrower_ref",
-        "full_name",
-        "zip",
-        "addresses",
-        "income_history",
-        "identifiers",
-        "missing_fields"
-      ],
-      "properties": {
-        "borrower_ref": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Stable reference within this extraction payload (used by application.parties)."
+          "items": { "$ref": "#/$defs/evidence" }
         },
-        "full_name": {
-          "$ref": "#/$defs/value_with_evidence_string"
-        },
-        "zip": {
-          "$ref": "#/$defs/value_with_evidence_zip"
-        },
-        "addresses": {
+        "names_in_proximity": {
           "type": "array",
-          "items": {
-            "$ref": "#/$defs/address_extraction"
-          }
-        },
-        "income_history": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/income_extraction"
-          }
-        },
-        "identifiers": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/identifier_extraction"
-          }
-        },
-        "missing_fields": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/field_name"
-          },
-          "uniqueItems": true
-        }
-      }
-    },
-    "application_party": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "borrower_ref",
-        "role"
-      ],
-      "properties": {
-        "borrower_ref": {
-          "type": "string",
-          "minLength": 1,
-          "description": "References borrowers[*].borrower_ref in this same extraction payload."
-        },
-        "role": {
-          "type": "string",
-          "enum": [
-            "borrower",
-            "co_borrower",
-            "other"
-          ]
-        }
-      }
-    },
-    "application_extraction": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "application_ref",
-        "loan_number",
-        "property_address",
-        "parties",
-        "identifiers",
-        "missing_fields"
-      ],
-      "properties": {
-        "application_ref": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Stable reference within this extraction payload."
-        },
-        "loan_number": {
-          "$ref": "#/$defs/value_with_evidence_string"
-        },
-        "property_address": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "value",
-            "evidence"
-          ],
-          "properties": {
-            "value": {
-              "$ref": "#/$defs/address_value"
-            },
-            "evidence": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "$ref": "#/$defs/evidence"
-              }
-            }
-          }
-        },
-        "parties": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/application_party"
-          }
-        },
-        "identifiers": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/identifier_extraction"
-          }
-        },
-        "missing_fields": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/field_name"
-          },
-          "uniqueItems": true
+          "items": { "$ref": "#/$defs/name_in_proximity" }
         }
       }
     }

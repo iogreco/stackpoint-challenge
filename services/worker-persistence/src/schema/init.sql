@@ -1,16 +1,14 @@
--- Initial database schema for loan document extraction system
+-- Initial database schema for loan document extraction system (run once when starting from scratch)
 
 -- ============================================================================
 -- Core entities
 -- ============================================================================
 
--- Borrowers table - individual people
+-- Borrowers table - individual people (identity is borrower_id only; zip/address/SSN are facts in substructures)
 CREATE TABLE IF NOT EXISTS borrowers (
     borrower_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    borrower_key VARCHAR(128) UNIQUE NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PARTIAL' CHECK (status IN ('COMPLETE', 'PARTIAL')),
     full_name VARCHAR(255) NOT NULL,
-    zip VARCHAR(10) NOT NULL,
     last_correlation_id VARCHAR(64),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -18,7 +16,6 @@ CREATE TABLE IF NOT EXISTS borrowers (
 
 CREATE INDEX IF NOT EXISTS idx_borrowers_status ON borrowers(status);
 CREATE INDEX IF NOT EXISTS idx_borrowers_full_name ON borrowers(full_name);
-CREATE INDEX IF NOT EXISTS idx_borrowers_zip ON borrowers(zip);
 
 -- Applications table - loan applications (party groups)
 CREATE TABLE IF NOT EXISTS applications (
@@ -88,6 +85,7 @@ CREATE TABLE IF NOT EXISTS borrower_addresses (
     page_number INTEGER NOT NULL,
     quote VARCHAR(300) NOT NULL,
     evidence_source_context VARCHAR(64),
+    proximity_score INTEGER CHECK (proximity_score IS NULL OR (proximity_score >= 0 AND proximity_score <= 3)),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -107,6 +105,7 @@ CREATE TABLE IF NOT EXISTS borrower_incomes (
     page_number INTEGER NOT NULL,
     quote VARCHAR(300) NOT NULL,
     evidence_source_context VARCHAR(64),
+    proximity_score INTEGER CHECK (proximity_score IS NULL OR (proximity_score >= 0 AND proximity_score <= 3)),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -122,6 +121,7 @@ CREATE TABLE IF NOT EXISTS borrower_identifiers (
     page_number INTEGER NOT NULL,
     quote VARCHAR(300) NOT NULL,
     evidence_source_context VARCHAR(64),
+    proximity_score INTEGER CHECK (proximity_score IS NULL OR (proximity_score >= 0 AND proximity_score <= 3)),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -145,6 +145,7 @@ CREATE TABLE IF NOT EXISTS application_addresses (
     page_number INTEGER NOT NULL,
     quote VARCHAR(300) NOT NULL,
     evidence_source_context VARCHAR(64),
+    proximity_score INTEGER CHECK (proximity_score IS NULL OR (proximity_score >= 0 AND proximity_score <= 3)),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -160,6 +161,7 @@ CREATE TABLE IF NOT EXISTS application_identifiers (
     page_number INTEGER NOT NULL,
     quote VARCHAR(300) NOT NULL,
     evidence_source_context VARCHAR(64),
+    proximity_score INTEGER CHECK (proximity_score IS NULL OR (proximity_score >= 0 AND proximity_score <= 3)),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -174,6 +176,7 @@ CREATE TABLE IF NOT EXISTS application_party_evidence (
     page_number INTEGER NOT NULL,
     quote VARCHAR(300) NOT NULL,
     evidence_source_context VARCHAR(64),
+    proximity_score INTEGER CHECK (proximity_score IS NULL OR (proximity_score >= 0 AND proximity_score <= 3)),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

@@ -79,7 +79,7 @@ export interface ValidationResult {
 }
 
 /**
- * Validate an ExtractionResult against the schema
+ * Validate an ExtractionResult (fact-based) against extraction_result.schema.json
  */
 export function validateExtraction(data: unknown): ValidationResult {
   const schema = getExtractionResultSchema();

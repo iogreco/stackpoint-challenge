@@ -1,0 +1,83 @@
+{
+  "schema_version": "2.0",
+  "correlation_id": "00000000-0000-0000-0000-000000000002",
+  "document": {
+    "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+    "source_filename": "Paystub- John Homeowner (Current).pdf",
+    "raw_uri": "file://storage/raw/local_folder/5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d.pdf",
+    "source_system": "local_folder"
+  },
+  "extraction_mode": "text",
+  "facts": [
+    {
+      "fact_type": "address",
+      "value": {
+        "street1": "175 13th Street",
+        "street2": "",
+        "city": "Washington",
+        "state": "DC",
+        "zip": "20013"
+      },
+      "evidence": [
+        {
+          "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+          "source_filename": "Paystub- John Homeowner (Current).pdf",
+          "page_number": 1,
+          "quote": "John Homeowner\n175 13th Street\nWashington, DC 20013",
+          "evidence_source_context": "paystub_employee_info_block"
+        }
+      ],
+      "names_in_proximity": [
+        {
+          "full_name": "John Homeowner",
+          "evidence": [
+            {
+              "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+              "source_filename": "Paystub- John Homeowner (Current).pdf",
+              "page_number": 1,
+              "quote": "John Homeowner\n175 13th Street",
+              "evidence_source_context": "paystub_employee_info_block"
+            }
+          ],
+          "proximity_score": 3
+        }
+      ]
+    },
+    {
+      "fact_type": "income",
+      "value": {
+        "amount": 4900.0,
+        "currency": "USD",
+        "frequency": "biweekly",
+        "period": { "year": 2025, "start_date": "2025-04-12", "end_date": "2025-04-25" },
+        "employer": "ABC Technologies",
+        "source_type": "paystub"
+      },
+      "evidence": [
+        {
+          "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+          "source_filename": "Paystub- John Homeowner (Current).pdf",
+          "page_number": 1,
+          "quote": "Gross Pay 4,900.00 44,100.00 Basis of Pay: Salary",
+          "evidence_source_context": "paystub_ytd_rate_of_pay"
+        }
+      ],
+      "names_in_proximity": [
+        {
+          "full_name": "John Homeowner",
+          "evidence": [
+            {
+              "document_id": "5b2ad98f18a947a07f3a3472551745c33d6fb60ac357028e36347a0f6519c58d",
+              "source_filename": "Paystub- John Homeowner (Current).pdf",
+              "page_number": 1,
+              "quote": "John Homeowner",
+              "evidence_source_context": "paystub_employee_info_block"
+            }
+          ],
+          "proximity_score": 2
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

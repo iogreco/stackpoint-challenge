@@ -1,10 +1,9 @@
 /**
  * LLM Vision Integration
  *
- * Calls OpenAI vision API for PDF fallback extraction.
- * Uses OpenAI's Structured Outputs feature to ensure schema compliance.
+ * Uses OpenAI vision API for fact-based extraction (PDF fallback).
+ * Same fact schema and prompts as text extractor; merges facts when text result exists.
  */
-/// <reference types="node" />
 
 import fs from 'fs';
 import OpenAI from 'openai';
@@ -13,11 +12,15 @@ import {
   config,
   llmRequestsCounter,
   llmRequestDurationHistogram,
-  type ExtractionResult,
   type DocumentInfo,
+  type Evidence,
+  type Fact,
+  type FactExtractionResult,
+  type FactIncomeValue,
+  type NameInProximity,
 } from '@stackpoint/shared';
 
-const PROMPT_VERSION = '2.0.0';
+const PROMPT_VERSION = '3.0.0-facts';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || config.openaiApiKey,
@@ -25,172 +28,36 @@ const openai = new OpenAI({
 });
 
 /**
- * JSON Schema for OpenAI Structured Outputs
- * This defines the exact structure the LLM must return.
+ * JSON Schema for OpenAI Structured Outputs (facts-based, aligned with text extractor).
  */
-const EXTRACTION_SCHEMA = {
-  name: 'loan_document_extraction',
+const FACT_EXTRACTION_SCHEMA = {
+  name: 'fact_document_extraction',
   strict: true,
   schema: {
     type: 'object',
     additionalProperties: false,
-    required: ['applications', 'borrowers', 'missing_fields', 'warnings'],
+    required: ['facts', 'warnings'],
     properties: {
-      applications: {
+      facts: {
         type: 'array',
-        description: 'Loan/application data extracted from the document',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['application_ref', 'loan_number', 'property_address', 'parties', 'identifiers', 'missing_fields'],
-          properties: {
-            application_ref: {
-              type: 'string',
-              description: 'Unique reference like "application_1"',
-            },
-            loan_number: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['value', 'evidence'],
-              properties: {
-                value: { type: 'string', description: 'The loan number, or empty string if not found' },
-                evidence: {
-                  type: 'array',
-                  items: { $ref: '#/$defs/evidence' },
-                },
-              },
-            },
-            property_address: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['value', 'evidence'],
-              properties: {
-                value: { $ref: '#/$defs/address_value' },
-                evidence: {
-                  type: 'array',
-                  items: { $ref: '#/$defs/evidence' },
-                },
-              },
-            },
-            parties: {
-              type: 'array',
-              description: 'Link to borrowers via borrower_ref',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['borrower_ref', 'role'],
-                properties: {
-                  borrower_ref: { type: 'string', description: 'References a borrower_ref from the borrowers array' },
-                  role: { type: 'string', enum: ['borrower', 'co_borrower', 'other'] },
-                },
-              },
-            },
-            identifiers: {
-              type: 'array',
-              items: { $ref: '#/$defs/identifier_extraction' },
-            },
-            missing_fields: {
-              type: 'array',
-              items: { $ref: '#/$defs/field_name' },
-            },
-          },
-        },
-      },
-      borrowers: {
-        type: 'array',
-        description: 'Individual borrower data extracted from the document',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['borrower_ref', 'full_name', 'zip', 'addresses', 'income_history', 'identifiers', 'missing_fields'],
-          properties: {
-            borrower_ref: {
-              type: 'string',
-              description: 'Unique reference like "borrower_1", "borrower_2"',
-            },
-            full_name: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['value', 'evidence'],
-              properties: {
-                value: { type: 'string', description: 'Full name in "First Last" format' },
-                evidence: {
-                  type: 'array',
-                  items: { $ref: '#/$defs/evidence' },
-                },
-              },
-            },
-            zip: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['value', 'evidence'],
-              properties: {
-                value: {
-                  type: 'string',
-                  description:
-                    "ZIP code of the borrower's residence only (5 or 5+4 digits). Do NOT use the employer's business address ZIP from employment verification (EVOE/VOE) documents.",
-                },
-                evidence: {
-                  type: 'array',
-                  items: { $ref: '#/$defs/evidence' },
-                },
-              },
-            },
-            addresses: {
-              type: 'array',
-              description:
-                "Borrower's residence addresses only. Exclude employer or business addresses (e.g. addresses under EMPLOYER section in EVOE/VOE).",
-              items: { $ref: '#/$defs/address_extraction' },
-            },
-            income_history: {
-              type: 'array',
-              items: { $ref: '#/$defs/income_extraction' },
-            },
-            identifiers: {
-              type: 'array',
-              items: { $ref: '#/$defs/identifier_extraction' },
-            },
-            missing_fields: {
-              type: 'array',
-              items: { $ref: '#/$defs/field_name' },
-            },
-          },
-        },
-      },
-      missing_fields: {
-        type: 'array',
-        description: 'Top-level fields that could not be extracted from this document',
-        items: { $ref: '#/$defs/field_name' },
+        description: 'List of extracted facts with names_in_proximity and proximity_score',
+        items: { $ref: '#/$defs/fact' },
       },
       warnings: {
         type: 'array',
-        description: 'Non-fatal warnings during extraction',
         items: { type: 'string' },
       },
     },
     $defs: {
-      field_name: {
-        type: 'string',
-        enum: [
-          'borrower.full_name',
-          'borrower.zip',
-          'borrower.addresses',
-          'borrower.income_history',
-          'borrower.identifiers',
-          'application.loan_number',
-          'application.property_address',
-          'application.parties',
-        ],
-      },
       evidence: {
         type: 'object',
         additionalProperties: false,
         required: ['document_id', 'source_filename', 'page_number', 'quote', 'evidence_source_context'],
         properties: {
-          document_id: { type: 'string', description: 'Use the exact document_id from input' },
-          source_filename: { type: 'string', description: 'Use the exact source_filename from input' },
-          page_number: { type: 'integer', description: '1-indexed page number' },
-          quote: { type: 'string', description: 'Short quote (max 300 chars) supporting the extracted value' },
+          document_id: { type: 'string' },
+          source_filename: { type: 'string' },
+          page_number: { type: 'integer' },
+          quote: { type: 'string', maxLength: 300 },
           evidence_source_context: {
             type: 'string',
             enum: [
@@ -208,9 +75,21 @@ const EXTRACTION_SCHEMA = {
               'letter_of_explanation',
               'other',
             ],
-            description:
-              'Where on the document this value came from. For addresses use an address context; for income use an income context. Use "other" only when unclear.',
           },
+        },
+      },
+      name_in_proximity: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['full_name', 'evidence', 'proximity_score'],
+        properties: {
+          full_name: { type: 'string' },
+          evidence: {
+            type: 'array',
+            minItems: 1,
+            items: { $ref: '#/$defs/evidence' },
+          },
+          proximity_score: { type: 'integer', minimum: 0, maximum: 3 },
         },
       },
       address_value: {
@@ -218,69 +97,68 @@ const EXTRACTION_SCHEMA = {
         additionalProperties: false,
         required: ['street1', 'street2', 'city', 'state', 'zip'],
         properties: {
-          street1: { type: 'string', description: 'Primary street address, or empty string if not found' },
-          street2: { type: 'string', description: 'Secondary address (apt, suite), or empty string if none' },
-          city: { type: 'string', description: 'City name, or empty string if not found' },
-          state: { type: 'string', description: '2-letter state code, or empty string if not found' },
-          zip: { type: 'string', description: '5 digits or 5+4 format, or empty string if not found' },
+          street1: { type: 'string' },
+          street2: { type: 'string' },
+          city: { type: 'string' },
+          state: { type: 'string' },
+          zip: { type: 'string' },
         },
       },
-      address_extraction: {
+      income_period: {
         type: 'object',
         additionalProperties: false,
-        required: ['type', 'value', 'evidence'],
+        required: ['year', 'start_date', 'end_date'],
         properties: {
-          type: { type: 'string', enum: ['current', 'previous', 'mailing', 'property'] },
-          value: { $ref: '#/$defs/address_value' },
-          evidence: {
-            type: 'array',
-            items: { $ref: '#/$defs/evidence' },
-          },
+          year: { type: 'integer' },
+          start_date: { type: 'string' },
+          end_date: { type: 'string' },
         },
       },
-      income_extraction: {
+      fact_income_value: {
         type: 'object',
         additionalProperties: false,
-        required: ['source_type', 'employer', 'period', 'amount', 'currency', 'frequency', 'evidence'],
+        required: ['amount', 'currency', 'frequency', 'period', 'employer', 'source_type'],
         properties: {
+          amount: { type: 'number' },
+          currency: { type: 'string' },
+          frequency: { type: 'string', enum: ['annual', 'monthly', 'biweekly', 'weekly', 'daily', 'unknown'] },
+          period: { $ref: '#/$defs/income_period' },
+          employer: { type: 'string' },
           source_type: {
             type: 'string',
             enum: ['w2', 'paystub', 'evoe', 'tax_return_1040', 'schedule_c', 'bank_statement', 'other'],
           },
-          employer: { type: 'string', description: 'Employer name, or empty string if not applicable' },
-          period: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['year', 'start_date', 'end_date'],
-            properties: {
-              year: { type: 'integer', description: 'Tax year or income year' },
-              start_date: { type: 'string', description: 'ISO date YYYY-MM-DD, or empty string if unknown' },
-              end_date: { type: 'string', description: 'ISO date YYYY-MM-DD, or empty string if unknown' },
-            },
-          },
-          amount: { type: 'number', description: 'Income amount as a number' },
-          currency: { type: 'string', description: '3-letter currency code, default USD' },
-          frequency: {
-            type: 'string',
-            enum: ['annual', 'monthly', 'biweekly', 'weekly', 'daily', 'unknown'],
-            description: 'How often this income is received',
-          },
-          evidence: {
-            type: 'array',
-            items: { $ref: '#/$defs/evidence' },
-          },
         },
       },
-      identifier_extraction: {
+      fact_value: {
         type: 'object',
         additionalProperties: false,
-        required: ['type', 'value', 'evidence'],
+        required: ['address', 'string_value', 'income'],
+        description: 'Exactly one branch applies by fact_type: address->address, ssn/loan_number/employer_name->string_value, income->income. Fill others with empty/default.',
         properties: {
-          type: { type: 'string', enum: ['loan_number', 'account_number', 'ssn', 'ein', 'other'] },
-          value: { type: 'string', description: 'The identifier value (SSN in XXX-XX-XXXX format)' },
+          address: { $ref: '#/$defs/address_value' },
+          string_value: { type: 'string' },
+          income: { $ref: '#/$defs/fact_income_value' },
+        },
+      },
+      fact: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['fact_type', 'value', 'evidence', 'names_in_proximity'],
+        properties: {
+          fact_type: {
+            type: 'string',
+            enum: ['address', 'ssn', 'income', 'loan_number', 'employer_name'],
+          },
+          value: { $ref: '#/$defs/fact_value' },
           evidence: {
             type: 'array',
+            minItems: 1,
             items: { $ref: '#/$defs/evidence' },
+          },
+          names_in_proximity: {
+            type: 'array',
+            items: { $ref: '#/$defs/name_in_proximity' },
           },
         },
       },
@@ -288,110 +166,85 @@ const EXTRACTION_SCHEMA = {
   },
 } as const;
 
-const SYSTEM_PROMPT = `You are a document extraction specialist using vision capabilities. Extract structured data from loan document PDFs.
+const SYSTEM_PROMPT = `You are a document extraction specialist using vision. Extract FACTS from loan document PDFs. For each fact list ALL full names near it with proximity_score (0-3).
 
-EXTRACTION RULES:
-1. Extract all borrower information: full name, addresses, income records, and identifiers (SSN, account numbers)
-2. Extract all application/loan information: loan numbers, property addresses
-3. Link borrowers to applications using the parties array
+FACT TYPES: address, ssn, income, loan_number, employer_name
+value is an object with address, string_value, and income. Fill only the one that matches fact_type (address->address, ssn/loan_number/employer_name->string_value, income->income); use empty/default for the other two.
+For each fact: value, evidence (document_id, source_filename, page_number, quote, evidence_source_context), names_in_proximity (full_name, evidence, proximity_score).
+proximity_score: 3=same line, 2=within 1 line, 1=within 2-3 lines, 0=farther.
+For loan_number: list all applicant names (score 0 if far).
+EVIDENCE SOURCE CONTEXT: use address/income context strings or "other".
+DATA: Names "First Last", ZIP 5 or 5+4, SSN XXX-XX-XXXX, dates YYYY-MM-DD, state 2-letter, currency USD.`;
 
-BORROWER ADDRESSES (critical):
-- borrower.addresses and borrower.zip must be the BORROWER'S RESIDENCE (home/mailing address), not the employer's address.
-- In employment verification documents (EVOE, VOE, etc.), the address under "EMPLOYER" or "Employer" is the employer's business address. Do NOT use it as the borrower's address.
-- If the document only shows an employer address and no borrower residence, leave addresses [] and zip "" and add borrower.addresses (and borrower.zip if needed) to missing_fields.
+const USER_PROMPT_TEMPLATE = `Extract facts from this loan document PDF.
 
-EVIDENCE REQUIREMENTS:
-- Every extracted value MUST have at least one evidence entry
-- Use the EXACT document_id and source_filename provided in the input
-- page_number is 1-indexed (first page is 1)
-- quote must be a short snippet (under 300 chars) that directly supports the extracted value
-- evidence_source_context: set from the table below based on where the value appears. Use "other" only when you cannot determine.
-
-EVIDENCE SOURCE CONTEXT (use these exact strings):
-For BORROWER ADDRESSES (borrower.addresses, borrower.zip):
-  tax_return_1040_taxpayer_address_block = Tax return (1040) taxpayer address block
-  w2_employee_address_block = W-2 employee address block
-  closing_disclosure_borrower_section = Closing Disclosure borrower section
-  bank_statement_account_holder_address_block = Bank statement account holder address block
-  paystub_employee_info_block = Paystub employee info block
-  paystub_header_employer_block = Paystub header / employer block (NOT borrower; low authority)
-  w2_employer_address_block = W-2 employer address block (NOT borrower; low authority)
-For INCOME (income_history):
-  w2_wages_boxes_annual = W-2 wages boxes (annual)
-  tax_return_1040_schedule_c_net_profit = 1040 / Schedule C net profit
-  paystub_ytd_rate_of_pay = Paystub YTD / rate-of-pay (with period)
-  evoe_verification = Verifications (EVOE)
-  letter_of_explanation = Free-text letters of explanation
-Use "other" only when the source does not match any of the above.
-
-DATA FORMATTING:
-- Names: "First Last" format
-- ZIP codes: 5 digits (12345) or 5+4 format (12345-6789)
-- SSN: XXX-XX-XXXX format
-- Income amounts: numbers (not strings)
-- Dates: YYYY-MM-DD format
-- State codes: 2-letter uppercase (e.g., "DC", "CA")
-- Currency: 3-letter code (default "USD")
-
-MISSING DATA:
-- If a required field cannot be found, add it to missing_fields
-- Use empty arrays [] for optional array fields with no data
-- Use empty string "" for required string fields with no data found
-
-BORROWER REFERENCES:
-- Use "borrower_1", "borrower_2", etc. for borrower_ref
-- Use "application_1", etc. for application_ref
-- Reference borrowers in application.parties using their borrower_ref`;
-
-const USER_PROMPT_TEMPLATE = `Extract data from this loan document PDF.
-
-DOCUMENT METADATA (use these exact values in evidence):
+DOCUMENT METADATA (use in all evidence):
 - document_id: {{document_id}}
 - source_filename: {{source_filename}}
 
-Previous extraction found these items but may be incomplete:
 {{previous_result}}
 
-Please extract any missing data from the document. Focus especially on:
-{{missing_fields}}
+Return a facts array. Each fact: fact_type, value (address + string_value + income; fill only the branch for fact_type), evidence, names_in_proximity (proximity_score 0-3).`;
 
-Extract all borrowers and applications found. Include evidence for every extracted value.`;
+/** Raw value shape from LLM (address + string_value + income all required). */
+interface LlmFactValue {
+  address: { street1: string; street2: string; city: string; state: string; zip: string };
+  string_value: string;
+  income: {
+    amount: number;
+    currency: string;
+    frequency: string;
+    period: { year: number; start_date: string; end_date: string };
+    employer: string;
+    source_type: string;
+  };
+}
 
-export interface LlmExtractionResult {
-  applications: any[];
-  borrowers: any[];
-  missing_fields: string[];
+function normalizeFactValue(factType: string, raw: LlmFactValue): Fact['value'] {
+  if (factType === 'address') return raw.address;
+  if (factType === 'income') return raw.income as FactIncomeValue;
+  return raw.string_value;
+}
+
+function isRawFactValue(v: unknown): v is LlmFactValue {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    'address' in v &&
+    'string_value' in v &&
+    'income' in v
+  );
+}
+
+export interface LlmFactExtractionResult {
+  facts: any[];
   warnings?: string[];
 }
 
 /**
- * Call OpenAI vision API to extract data from PDF using Structured Outputs
+ * Call OpenAI vision API for fact extraction
  */
 export async function extractWithVision(
   pdfPath: string,
   documentInfo: DocumentInfo,
   correlationId: string,
-  previousResult?: { borrowers: any[]; applications: any[]; missing_fields: string[] }
-): Promise<{ result: LlmExtractionResult; requestId: string; model: string }> {
+  previousFacts?: { facts: any[] }
+): Promise<{ result: LlmFactExtractionResult; requestId: string; model: string }> {
   const model = process.env.LLM_MODEL_PDF || config.llmModelPdf;
 
-  // Read PDF and convert to base64
   const pdfBuffer = fs.readFileSync(pdfPath);
   const base64Pdf = pdfBuffer.toString('base64');
 
-  const previousResultStr = previousResult
-    ? JSON.stringify(previousResult, null, 2)
-    : 'None';
-
-  const missingFieldsStr = previousResult?.missing_fields?.join(', ') || 'All fields';
+  const previousResultStr = previousFacts?.facts?.length
+    ? `Previous extraction found ${previousFacts.facts.length} facts. Add or correct facts from the PDF.`
+    : 'Extract all facts from the document.';
 
   const userPrompt = USER_PROMPT_TEMPLATE
     .replace('{{document_id}}', documentInfo.document_id)
     .replace('{{source_filename}}', documentInfo.source_filename)
-    .replace('{{previous_result}}', previousResultStr)
-    .replace('{{missing_fields}}', missingFieldsStr);
+    .replace('{{previous_result}}', previousResultStr);
 
-  logger.info('Calling OpenAI vision for extraction with structured outputs', {
+  logger.info('Calling OpenAI vision for fact extraction', {
     model,
     document_id: documentInfo.document_id,
     pdf_size_bytes: pdfBuffer.length,
@@ -400,8 +253,6 @@ export async function extractWithVision(
   const startTime = Date.now();
 
   try {
-    // Chat Completions PDF input uses type "file" with file_data
-    // See https://platform.openai.com/docs/guides/pdf-files?api-mode=chat
     const response = await openai.chat.completions.create({
       model,
       messages: [
@@ -422,7 +273,7 @@ export async function extractWithVision(
       ],
       response_format: {
         type: 'json_schema',
-        json_schema: EXTRACTION_SCHEMA,
+        json_schema: FACT_EXTRACTION_SCHEMA,
       },
       max_tokens: 8192,
       temperature: 0,
@@ -439,26 +290,16 @@ export async function extractWithVision(
       throw new Error('Empty response from OpenAI vision');
     }
 
-    logger.info('OpenAI vision extraction complete', {
+    const result = JSON.parse(content) as LlmFactExtractionResult;
+    result.facts = result.facts || [];
+    result.warnings = result.warnings || [];
+
+    logger.info('OpenAI vision fact extraction complete', {
       model,
       request_id: requestId,
       duration_seconds: duration,
-      tokens_used: response.usage?.total_tokens,
+      fact_count: result.facts.length,
     });
-
-    const result = JSON.parse(content) as LlmExtractionResult;
-
-    // Debug: log extraction summary
-    logger.debug('PDF vision structured response', {
-      document_id: documentInfo.document_id,
-      borrower_count: result.borrowers?.length || 0,
-      application_count: result.applications?.length || 0,
-    });
-
-    // Ensure required arrays exist (should already be guaranteed by schema)
-    result.applications = result.applications || [];
-    result.borrowers = result.borrowers || [];
-    result.missing_fields = result.missing_fields || [];
 
     return { result, requestId, model };
   } catch (error) {
@@ -466,7 +307,7 @@ export async function extractWithVision(
     llmRequestDurationHistogram.observe({ model }, duration);
     llmRequestsCounter.inc({ model, status: 'error' });
 
-    logger.error('OpenAI vision extraction failed', error, {
+    logger.error('OpenAI vision fact extraction failed', error, {
       model,
       document_id: documentInfo.document_id,
     });
@@ -476,55 +317,43 @@ export async function extractWithVision(
 }
 
 /**
- * Merge text extraction result with vision result
+ * Merge text facts with vision facts (concatenate; vision adds or replaces when text failed)
  */
-export function mergeExtractionResults(
-  textResult: { borrowers: any[]; applications: any[]; missing_fields: string[] } | undefined,
-  visionResult: LlmExtractionResult
-): LlmExtractionResult {
-  if (!textResult) {
+export function mergeFacts(
+  textFacts: { facts: any[] } | undefined,
+  visionResult: LlmFactExtractionResult
+): LlmFactExtractionResult {
+  if (!textFacts?.facts?.length) {
     return visionResult;
   }
-
-  // Merge borrowers - prefer vision result for completeness
-  const borrowers = visionResult.borrowers.length > 0
-    ? visionResult.borrowers
-    : textResult.borrowers;
-
-  // Merge applications - prefer vision result
-  const applications = visionResult.applications.length > 0
-    ? visionResult.applications
-    : textResult.applications;
-
-  // Missing fields should be from vision result (should be fewer)
-  const missing_fields = visionResult.missing_fields;
-
   return {
-    borrowers,
-    applications,
-    missing_fields,
+    facts: [...textFacts.facts, ...visionResult.facts],
     warnings: visionResult.warnings,
   };
 }
 
 /**
- * Build complete ExtractionResult from LLM output
+ * Build FactExtractionResult from merged LLM output
  */
-export function buildExtractionResult(
-  llmResult: LlmExtractionResult,
+export function buildFactExtractionResult(
+  llmResult: LlmFactExtractionResult,
   documentInfo: DocumentInfo,
   correlationId: string,
   model: string,
   requestId: string
-): ExtractionResult {
+): FactExtractionResult {
+  const facts: Fact[] = (llmResult.facts || []).map((f: { fact_type: string; value: unknown; evidence: Evidence[]; names_in_proximity: NameInProximity[] }) => ({
+    fact_type: f.fact_type as Fact['fact_type'],
+    value: isRawFactValue(f.value) ? normalizeFactValue(f.fact_type, f.value) : (f.value as Fact['value']),
+    evidence: f.evidence ?? [],
+    names_in_proximity: f.names_in_proximity ?? [],
+  }));
   return {
-    schema_version: '1.1.0',
+    schema_version: '2.0',
     correlation_id: correlationId,
     document: documentInfo,
     extraction_mode: 'pdf_fallback',
-    applications: llmResult.applications,
-    borrowers: llmResult.borrowers,
-    missing_fields: llmResult.missing_fields as any,
+    facts,
     warnings: llmResult.warnings,
     extraction_metadata: {
       provider: 'openai',

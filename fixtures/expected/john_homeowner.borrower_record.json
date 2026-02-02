@@ -1,10 +1,8 @@
 {
   "schema_version": "1.1.0",
   "borrower_id": "11111111-1111-1111-1111-111111111111",
-  "borrower_key": "9f2cf529d2c6cf4b924fcb1755bc62d7ebd8ea147fece0165ac96bf883197d72",
   "status": "COMPLETE",
   "full_name": "John Homeowner",
-  "zip": "20013",
   "addresses": [
     {
       "type": "current",

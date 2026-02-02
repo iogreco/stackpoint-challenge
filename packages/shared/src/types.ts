@@ -34,6 +34,8 @@ export interface Evidence {
   quote: string;
   /** Source context for confidence weighting (see matching-and-merge-spec §4.4). */
   evidence_source_context?: EvidenceSourceContext;
+  /** Proximity score 0-3 from facts-based extraction (see facts-based-extraction-spec §3.1). */
+  proximity_score?: number;
 }
 
 export interface ValueWithEvidence<T> {
@@ -198,6 +200,64 @@ export interface ExtractionResult {
 }
 
 // ============================================================================
+// Facts-based extraction (v2)
+// ============================================================================
+
+export type FactType = 'address' | 'ssn' | 'income' | 'loan_number' | 'employer_name';
+
+/** Per-name entry in names_in_proximity: name, where it appears, and proximity score (0–3). */
+export interface NameInProximity {
+  full_name: string;
+  evidence: Evidence[];
+  proximity_score: number;
+}
+
+/** Income value shape for fact_type income. */
+export interface FactIncomeValue {
+  amount: number;
+  currency: string;
+  frequency?: IncomeFrequency;
+  period: IncomePeriod;
+  employer?: string;
+  source_type?: IncomeSourceType;
+}
+
+/** Discriminated union of fact value shapes by fact_type. */
+export type FactValue =
+  | { fact_type: 'address'; value: AddressValue }
+  | { fact_type: 'ssn'; value: string }
+  | { fact_type: 'income'; value: FactIncomeValue }
+  | { fact_type: 'loan_number'; value: string }
+  | { fact_type: 'employer_name'; value: string };
+
+/** Single fact: type, value, evidence, and names in proximity with scores. */
+export interface Fact {
+  fact_type: FactType;
+  value: AddressValue | string | FactIncomeValue;
+  evidence: Evidence[];
+  names_in_proximity: NameInProximity[];
+}
+
+/** Fact-based extraction result (schema_version 2.0). */
+export interface FactExtractionResult {
+  schema_version: '2.0';
+  correlation_id: string;
+  document: DocumentInfo;
+  extraction_mode: ExtractionMode;
+  facts: Fact[];
+  warnings?: string[];
+  extraction_metadata: ExtractionMetadata;
+  created_at: string;
+}
+
+/** Type guard: result is fact-based (v2). */
+export function isFactExtractionResult(
+  result: ExtractionResult | FactExtractionResult
+): result is FactExtractionResult {
+  return (result as FactExtractionResult).schema_version === '2.0';
+}
+
+// ============================================================================
 // Borrower Record (read model)
 // ============================================================================
 
@@ -252,10 +312,8 @@ export interface DocumentRef {
 export interface BorrowerRecord {
   schema_version: '1.1.0';
   borrower_id: string;
-  borrower_key: string;
   status: BorrowerStatus;
   full_name: string;
-  zip: string;
   addresses: BorrowerAddress[];
   income_history: BorrowerIncome[];
   identifiers: BorrowerIdentifier[];

@@ -62,10 +62,11 @@
           "document_id": { "type": "string", "minLength": 16 },
           "source_filename": { "type": "string", "minLength": 1 },
           "page_number": { "type": "integer", "minimum": 1 },
-          "quote": { "type": "string", "minLength": 1, "maxLength": 300 }
+          "quote": { "type": "string", "minLength": 1, "maxLength": 300 },
+          "proximity_score": { "type": "integer", "minimum": 0, "maximum": 3, "description": "Proximity score 0-3 from facts-based extraction (see facts-based-extraction-spec §3.1)." }
         }
       },
-  
+
       "address": {
         "type": "object",
         "additionalProperties": false,

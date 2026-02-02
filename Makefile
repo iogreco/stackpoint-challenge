@@ -1,4 +1,4 @@
-.PHONY: build up down logs test test-e2e clean obs-setup obs-load obs-cleanup install
+.PHONY: build up down logs test test-e2e clean clean-all reset obs-setup obs-load obs-cleanup install
 
 # Default target
 all: build up
@@ -37,8 +37,16 @@ test-e2e:
 	npm run test:e2e
 	docker compose -f docker-compose.yml -f docker-compose.test.yml down
 
-# Clean up volumes and images
-clean:
+# Reset state for clean test (fresh Postgres/Redis, remove service dist; keeps node_modules and packages/shared dist)
+reset:
+	docker compose down -v --rmi local
+	rm -rf services/*/dist
+
+# Clean up volumes, images, and build artifacts (keeps node_modules so IDE/TypeScript keep working)
+clean: reset
+
+# Full wipe including dependencies (use when you need a clean install)
+clean-all:
 	docker compose down -v --rmi local
 	rm -rf node_modules
 	rm -rf packages/*/node_modules

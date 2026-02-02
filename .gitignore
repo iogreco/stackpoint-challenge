@@ -8,7 +8,12 @@ node_modules/
 # Build outputs
 dist/
 *.js.map
+*.d.ts.map
 *.tsbuildinfo
+
+# TypeScript compiled output in packages (emitted next to source when built from repo root, etc.)
+packages/**/*.js
+packages/**/*.d.ts
 
 # Logs
 *.log

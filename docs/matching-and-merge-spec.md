@@ -41,15 +41,17 @@ A **partial match** is any of the following between the payload borrower and a c
 | **Zip match** | Same 5-digit zip, or same 5-digit prefix when one or both are ZIP+4. | e.g., 20013 and 20013-1234 → match. |
 | **Address meaningful portion** | Same after normalization: at least (city + state) or (street1 + city + state) or (zip + state). | Normalize: lowercase, collapse spaces, strip punctuation; optionally ignore apt/suite. "Meaningful" means enough to avoid false matches (e.g., same zip alone may be too weak; zip + state or city + state is stronger). |
 
-### 2.3 Match decision
+### 2.3 Match decision (inverted: merge by default, split only on strong conflict)
 
 - **Rule (match decision)**:
-  - If there are no candidates (no existing borrower with same normalized name), **create a new borrower**.
-  - Else, for each candidate, compute a **match score** from partial-match signals (e.g., count of signals that hold, or weighted sum).
-  - If the **best candidate** has match score above a chosen **threshold** (e.g., at least one strong signal such as SSN overlap or identifier match, or at least two medium signals such as zip + address partial match), treat the payload borrower as the **same** as that candidate; use that candidate’s borrower record for merge.
-  - Otherwise, **create a new borrower**.
+  - If there are **no candidates** (no existing borrower with same normalized name), **create a new borrower**.
+  - Else, **merge by default**: treat the payload borrower as the **same** as a candidate (same normalized name) and use that candidate's borrower record for merge—**unless** adding this payload would introduce **strong conflicting evidence** (see below). In that case, **create a new borrower** (a second person with the same name).
+  - **Strong conflicting evidence** (split only when present):
+    - **SSN conflict**: The payload contains a **new** SSN (identifier type SSN) with **proximity_score 3** (see facts-based-extraction-spec §3.1) that does **not** overlap (e.g., different last-4 or full SSN) any existing SSN for that candidate. Then treat as a different person: create a new borrower.
+    - **Address conflict**: The payload contains an address with **proximity_score ≥ 2** whose (city+state or zip+state) is **different** from all existing addresses for that candidate, and the candidate already has at least one address with **proximity_score ≥ 2**. Then treat as a different person: create a new borrower.
+  - When multiple candidates exist and none have strong conflict, merge into one (e.g., the first such candidate); implementation may use partial-match signals to pick the best.
 
-- **Strong vs medium**: Strong = SSN overlap, identifier value match. Medium = zip match, address meaningful-portion match. Threshold can be "at least one strong" or "at least two medium" or a numeric score; exact threshold is an implementation choice.
+- **Proximity score**: Each evidence entry may carry a **proximity_score** (0–3) from the facts-based extraction (see `docs/facts-based-extraction-spec.md` §3.1). This score is used to decide **split**: only high-proximity conflicting SSN or address triggers creating a second borrower with the same name.
 
 ---
 
@@ -192,8 +194,8 @@ This is a **starter** policy for the loan-doc corpus; store it as config (e.g., 
 
 1. **Extract** from payload: for each borrower, full name, identifiers, addresses, income_history, application refs.
 2. **Candidates**: Query existing borrowers where normalized full name matches.
-3. **Match**: For each candidate, evaluate partial-match signals (identifier, SSN overlap, zip, address). Compute match score; select best candidate and compare to threshold.
-4. **Resolve borrower**: If match above threshold → use that borrower’s id for merge; else create new borrower and use new id.
+3. **Match**: For each candidate (same normalized name), check for strong conflicting evidence (SSN with proximity_score 3 that does not overlap existing; or conflicting address with proximity_score ≥ 2). If no strong conflict → merge into that borrower; else create new borrower.
+4. **Resolve borrower**: If at least one candidate has no strong conflict → use that borrower's id for merge; else create new borrower and use new id.
 5. **Merge entities**: For each address (resp. identifier, income) in payload, determine "same" existing element or create new; add evidence and retain most complete value where defined.
 6. **Confidence**: For each merged element (address, identifier, income), set n_favorable = evidence count on this element, n_unfavorable = sum of evidence counts on all other elements of same type; compute score and assign HIGH / MEDIUM / LOW.
 7. **Persist**: Save borrower and all merged elements with their evidences and confidence (storage format is out of scope here).
@@ -206,7 +208,7 @@ This is a **starter** policy for the loan-doc corpus; store it as config (e.g., 
 |------|------|
 | **Candidates** | Same normalized full name. |
 | **Partial match** | Identifier value match; SSN overlap (visible digits); zip match; address meaningful portion (city+state or street+city+state or zip+state). |
-| **Match decision** | Best candidate above threshold (e.g., ≥1 strong or ≥2 medium) → same borrower; else new borrower. |
+| **Match decision** | Merge by default (same name → same borrower); create new borrower only when strong conflicting evidence (SSN with proximity 3 that does not overlap, or conflicting address with proximity ≥ 2). See §2.3. |
 | **Address merge** | Same address → add evidence to existing; else new address. |
 | **Identifier merge** | Same type + overlap (e.g., SSN overlap) → add evidence, keep most complete value; else new identifier. |
 | **Income merge** | Same `income_identity_key` (mandatory `source_type` + employer_norm + period_key) → add evidence to existing; else new income. |

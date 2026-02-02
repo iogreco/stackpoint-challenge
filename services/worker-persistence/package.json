@@ -2,11 +2,15 @@
   "name": "@stackpoint/worker-persistence",
   "version": "1.0.0",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./lib/attribution": "./dist/lib/attribution.js"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "migrate": "node dist/migrate.js"
+    "init-db": "node dist/init-db.js"
   },
   "dependencies": {
     "@stackpoint/shared": "file:../../packages/shared",

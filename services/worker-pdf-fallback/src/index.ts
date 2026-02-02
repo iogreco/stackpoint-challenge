@@ -23,8 +23,8 @@ import {
 } from '@stackpoint/shared';
 import {
   extractWithVision,
-  mergeExtractionResults,
-  buildExtractionResult,
+  mergeFacts,
+  buildFactExtractionResult,
 } from './lib/llm';
 
 // Create queues
@@ -42,7 +42,7 @@ async function processExtractPdf(job: Job<ExtractPdfJob, void>): Promise<void> {
     source_doc_id,
     source_filename,
     discovered_at,
-    text_extraction_result,
+    fact_extraction_result,
   } = job.data;
 
   return runWithContextAsync(
@@ -55,7 +55,7 @@ async function processExtractPdf(job: Job<ExtractPdfJob, void>): Promise<void> {
         document_id,
         source_filename,
         attempt: job.attemptsMade + 1,
-        has_previous_result: !!text_extraction_result,
+        has_previous_result: !!fact_extraction_result?.facts?.length,
       });
 
       try {
@@ -75,20 +75,20 @@ async function processExtractPdf(job: Job<ExtractPdfJob, void>): Promise<void> {
           discovered_at,
         };
 
-        // Step 2: Call vision API
+        // Step 2: Call vision API (pass previous text facts if any)
         const filePath = raw_uri.replace('file://', '');
         const { result: visionResult, requestId, model } = await extractWithVision(
           filePath,
           documentInfo,
           correlation_id,
-          text_extraction_result
+          fact_extraction_result
         );
 
-        // Step 3: Merge with text extraction result
-        const mergedResult = mergeExtractionResults(text_extraction_result, visionResult);
+        // Step 3: Merge text facts with vision facts
+        const mergedResult = mergeFacts(fact_extraction_result, visionResult);
 
-        // Step 4: Build extraction result
-        const extractionResult = buildExtractionResult(
+        // Step 4: Build fact extraction result
+        const factExtractionResult = buildFactExtractionResult(
           mergedResult,
           documentInfo,
           correlation_id,
@@ -97,24 +97,23 @@ async function processExtractPdf(job: Job<ExtractPdfJob, void>): Promise<void> {
         );
 
         // Step 5: Validate against schema
-        const validation = validateExtraction(extractionResult);
+        const validation = validateExtraction(factExtractionResult);
 
         if (!validation.valid) {
-          logger.error('PDF extraction result validation failed', undefined, {
+          logger.error('PDF fact extraction validation failed', undefined, {
             errors: validation.errors,
           });
-          // Still proceed - partial data is better than no data
-          extractionResult.warnings = [
-            ...(extractionResult.warnings || []),
-            'Extraction result did not fully validate against schema',
+          factExtractionResult.warnings = [
+            ...(factExtractionResult.warnings || []),
+            'Fact extraction did not fully validate against schema',
           ];
         }
 
-        // Step 6: Enqueue persist_records
+        // Step 6: Enqueue persist_records (fact-based; persistence will run attribution)
         const persistPayload: PersistRecordsJob = {
           event_type: 'extraction.complete',
           correlation_id,
-          extraction_result: extractionResult,
+          extraction_result: factExtractionResult,
         };
 
         await persistRecordsQueue.add('persist_records', persistPayload, {
@@ -123,8 +122,7 @@ async function processExtractPdf(job: Job<ExtractPdfJob, void>): Promise<void> {
 
         logger.info('Enqueued persist_records from PDF fallback', {
           document_id,
-          borrower_count: extractionResult.borrowers.length,
-          application_count: extractionResult.applications.length,
+          fact_count: factExtractionResult.facts.length,
         });
 
         // Record metrics

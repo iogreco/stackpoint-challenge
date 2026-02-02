@@ -24,7 +24,7 @@ import {
   documentsProcessedCounter,
 } from '@stackpoint/shared';
 import { extractTextFromPdf } from './lib/pdf';
-import { extractWithLlm, buildExtractionResult, needsPdfFallback } from './lib/llm';
+import { extractWithLlm, buildFactExtractionResult, needsPdfFallbackFacts } from './lib/llm';
 
 // Create queues
 const extractPdfQueue = createQueue<ExtractPdfJob, void>(QUEUE_NAMES.EXTRACT_PDF);
@@ -84,8 +84,8 @@ async function processExtractText(job: Job<ExtractTextJob, void>): Promise<void>
           correlation_id
         );
 
-        // Step 4: Build extraction result
-        const extractionResult = buildExtractionResult(
+        // Step 4: Build fact extraction result
+        const factExtractionResult = buildFactExtractionResult(
           llmResult,
           documentInfo,
           correlation_id,
@@ -94,21 +94,16 @@ async function processExtractText(job: Job<ExtractTextJob, void>): Promise<void>
         );
 
         // Step 5: Validate against schema
-        const validation = validateExtraction(extractionResult);
+        const validation = validateExtraction(factExtractionResult);
 
         if (!validation.valid) {
-          logger.warn('Extraction result validation failed, attempting PDF fallback', {
+          logger.warn('Fact extraction validation failed, attempting PDF fallback', {
             errors: validation.errors,
           });
 
-          // Enqueue PDF fallback
           const fallbackPayload: ExtractPdfJob = {
             ...job.data,
-            text_extraction_result: {
-              borrowers: llmResult.borrowers,
-              applications: llmResult.applications,
-              missing_fields: llmResult.missing_fields,
-            },
+            fact_extraction_result: { facts: llmResult.facts },
           };
 
           await extractPdfQueue.add('extract_pdf', fallbackPayload, {
@@ -119,21 +114,13 @@ async function processExtractText(job: Job<ExtractTextJob, void>): Promise<void>
           return;
         }
 
-        // Step 6: Check if PDF fallback is needed
-        if (needsPdfFallback(llmResult)) {
-          logger.info('Text extraction incomplete, falling back to PDF', {
-            document_id,
-            missing_fields: llmResult.missing_fields,
-            borrower_count: llmResult.borrowers.length,
-          });
+        // Step 6: Check if PDF fallback is needed (no facts)
+        if (needsPdfFallbackFacts(llmResult)) {
+          logger.info('Text extraction produced no facts, falling back to PDF', { document_id });
 
           const fallbackPayload: ExtractPdfJob = {
             ...job.data,
-            text_extraction_result: {
-              borrowers: llmResult.borrowers,
-              applications: llmResult.applications,
-              missing_fields: llmResult.missing_fields,
-            },
+            fact_extraction_result: { facts: llmResult.facts },
           };
 
           await extractPdfQueue.add('extract_pdf', fallbackPayload, {
@@ -143,11 +130,11 @@ async function processExtractText(job: Job<ExtractTextJob, void>): Promise<void>
           return;
         }
 
-        // Step 7: Enqueue persist_records
+        // Step 7: Enqueue persist_records (fact-based result; persistence will run attribution)
         const persistPayload: PersistRecordsJob = {
           event_type: 'extraction.complete',
           correlation_id,
-          extraction_result: extractionResult,
+          extraction_result: factExtractionResult,
         };
 
         await persistRecordsQueue.add('persist_records', persistPayload, {
@@ -156,8 +143,7 @@ async function processExtractText(job: Job<ExtractTextJob, void>): Promise<void>
 
         logger.info('Enqueued persist_records', {
           document_id,
-          borrower_count: extractionResult.borrowers.length,
-          application_count: extractionResult.applications.length,
+          fact_count: factExtractionResult.facts.length,
         });
 
         // Record metrics

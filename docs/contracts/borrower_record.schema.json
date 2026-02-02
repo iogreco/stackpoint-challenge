@@ -7,10 +7,8 @@
   "required": [
     "schema_version",
     "borrower_id",
-    "borrower_key",
     "status",
     "full_name",
-    "zip",
     "addresses",
     "income_history",
     "identifiers",
@@ -27,12 +25,6 @@
       "description": "Internal stable identifier (UUID recommended)."
     },
 
-    "borrower_key": {
-      "type": "string",
-      "minLength": 8,
-      "description": "Deterministic match key (e.g., sha256(normalized_full_name|zip))."
-    },
-
     "status": {
       "type": "string",
       "enum": ["COMPLETE", "PARTIAL"],
@@ -40,8 +32,6 @@
     },
 
     "full_name": { "type": "string", "minLength": 1 },
-
-    "zip": { "type": "string", "pattern": "^[0-9]{5}(-[0-9]{4})?$" },
 
     "addresses": {
       "type": "array",
@@ -87,7 +77,8 @@
         "document_id": { "type": "string", "minLength": 16 },
         "source_filename": { "type": "string", "minLength": 1 },
         "page_number": { "type": "integer", "minimum": 1 },
-        "quote": { "type": "string", "minLength": 1, "maxLength": 300 }
+        "quote": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "proximity_score": { "type": "integer", "minimum": 0, "maximum": 3, "description": "Proximity score 0-3 from facts-based extraction (see facts-based-extraction-spec §3.1)." }
       }
     },
 

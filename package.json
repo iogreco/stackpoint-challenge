@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
+    "prepare": "npm run build --workspace=@stackpoint/shared --if-present",
     "lint": "eslint . --ext .ts",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "npm run test --workspace=integration-tests"

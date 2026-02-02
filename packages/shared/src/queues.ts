@@ -51,10 +51,9 @@ export interface ExtractTextJob extends DocumentAvailableJob {
  */
 export interface ExtractPdfJob extends DocumentAvailableJob {
   event_type: 'document.available';
-  text_extraction_result?: {
-    borrowers: unknown[];
-    applications: unknown[];
-    missing_fields: string[];
+  /** Fact-based extraction from text (when validation failed or no facts) for PDF fallback to merge or replace */
+  fact_extraction_result?: {
+    facts: unknown[];
   };
 }
 

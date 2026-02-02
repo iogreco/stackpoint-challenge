@@ -44,7 +44,7 @@ COPY docs/contracts ./docs/contracts
 
 # Install production dependencies
 WORKDIR /app/services/worker-ingestion
-RUN npm install --omit=dev
+RUN npm install --omit=dev --ignore-scripts
 
 WORKDIR /app
 

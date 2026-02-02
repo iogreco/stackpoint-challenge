@@ -43,7 +43,7 @@ This repository is implemented against a small set of concrete, machine-checkabl
 
 - **API contract:** `docs/api.md`
 - **Data contracts (JSON Schema):**
-  - `docs/contracts/extraction_result.schema.json` (LLM output per document; includes per-field evidence + completeness flags)
+  - `docs/contracts/extraction_result.schema.json` (LLM output per document; fact-based extraction: facts with names_in_proximity and proximity_score)
   - `docs/contracts/borrower_record.schema.json` (BorrowerRecord read model served by the Query API)
   - `docs/contracts/application_record.schema.json` (ApplicationRecord read model linking **multiple parties** under a loan number)
 - **Test fixtures (golden outputs):**
@@ -246,11 +246,7 @@ The Adapter is the only component that performs **pull** integrations. Downstrea
 ### 3.2 Stage 1: Text-first extraction (Text Extractor Worker)
 
 1. Extract plain text per-page using a local PDF parser (e.g., `pdfplumber` / `pdfjs`).
-2. Run LLM extraction on **text only** and produce an `ExtractionResult` that conforms to `docs/contracts/extraction_result.schema.json`:
-   - Borrower identity fields
-   - Loan/account numbers
-   - Income events (W-2, VOI/EVOE, paystub, Schedule C, etc.)
-   - Provenance pointers (doc + page + excerpt)
+2. Run LLM extraction on **text only** and produce an `ExtractionResult` that conforms to `docs/contracts/extraction_result.schema.json` (fact-based: facts with value, evidence, names_in_proximity and proximity_score).
 3. Validate response against schema + run lightweight consistency checks (see §8).
 4. Determine completeness:
    - If all required fields satisfied → enqueue `persist_borrower`.
