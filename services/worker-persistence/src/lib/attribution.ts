@@ -48,6 +48,24 @@ function chooseBestName(fact: Fact): NameInProximity | null {
   return best;
 }
 
+/**
+ * Get ALL qualifying names for a fact - returns all names with the highest proximity score.
+ * This is crucial for joint documents (e.g., 1040 with both spouses) where multiple people
+ * should be attributed the same fact (address, income, etc.).
+ */
+function getQualifyingNames(fact: Fact): NameInProximity[] {
+  if (!fact.names_in_proximity?.length) return [];
+
+  // Find the highest proximity score
+  let maxScore = -1;
+  for (const n of fact.names_in_proximity) {
+    if (n.proximity_score > maxScore) maxScore = n.proximity_score;
+  }
+
+  // Return all names with the highest score
+  return fact.names_in_proximity.filter((n) => n.proximity_score === maxScore);
+}
+
 /** Attach proximity_score (from chosen name) to each evidence entry for persistence and split logic. */
 function evidenceWithProximity(evidence: Evidence[], proximityScore: number | undefined): Evidence[] {
   if (proximityScore === undefined) return evidence;
@@ -89,24 +107,36 @@ export function attributeFacts(
         continue;
       }
 
-      const nameEntry = chooseBestName(fact);
-      const borrowerRef = nameEntry ? normalizeName(nameEntry.full_name) : null;
-      if (!borrowerRef) continue;
-      if (!borrowerFullNames.has(borrowerRef)) borrowerFullNames.set(borrowerRef, nameEntry!.full_name);
-      const addr: AddressExtraction = {
-        type: 'current',
-        value: value as AddressValue,
-        evidence: evidenceWithProximity(fact.evidence ?? [], nameEntry?.proximity_score),
-      };
-      const list = borrowerAddresses.get(borrowerRef) || [];
-      list.push(addr);
-      borrowerAddresses.set(borrowerRef, list);
-      const zip = (value as AddressValue).zip;
-      if (zip && !borrowerZipEvidence.has(borrowerRef))
-        borrowerZipEvidence.set(borrowerRef, {
-          zip,
-          evidence: evidenceWithProximity(fact.evidence ?? [], nameEntry?.proximity_score),
+      // Attribute address to ALL qualifying names (e.g., both spouses on joint 1040)
+      const qualifyingNames = getQualifyingNames(fact);
+      if (qualifyingNames.length === 0) continue;
+
+      if (qualifyingNames.length > 1) {
+        logger.debug('Attribution: address assigned to multiple borrowers', {
+          names: qualifyingNames.map((n) => n.full_name),
+          address: value,
+          proximity_score: qualifyingNames[0].proximity_score,
         });
+      }
+
+      for (const nameEntry of qualifyingNames) {
+        const borrowerRef = normalizeName(nameEntry.full_name);
+        if (!borrowerFullNames.has(borrowerRef)) borrowerFullNames.set(borrowerRef, nameEntry.full_name);
+        const addr: AddressExtraction = {
+          type: 'current',
+          value: value as AddressValue,
+          evidence: evidenceWithProximity(fact.evidence ?? [], nameEntry.proximity_score),
+        };
+        const list = borrowerAddresses.get(borrowerRef) || [];
+        list.push(addr);
+        borrowerAddresses.set(borrowerRef, list);
+        const zip = (value as AddressValue).zip;
+        if (zip && !borrowerZipEvidence.has(borrowerRef))
+          borrowerZipEvidence.set(borrowerRef, {
+            zip,
+            evidence: evidenceWithProximity(fact.evidence ?? [], nameEntry.proximity_score),
+          });
+      }
     } else if (fact.fact_type === 'ssn') {
       const nameEntry = chooseBestName(fact);
       const borrowerRef = nameEntry ? normalizeName(nameEntry.full_name) : null;
@@ -123,28 +153,71 @@ export function attributeFacts(
     } else if (fact.fact_type === 'income') {
       const v = fact.value;
       if (!v || typeof v !== 'object' || typeof (v as FactIncomeValue).amount !== 'number') continue;
-      const nameEntry = chooseBestName(fact);
-      const borrowerRef = nameEntry ? normalizeName(nameEntry.full_name) : null;
-      if (!borrowerRef) continue;
-      if (!borrowerFullNames.has(borrowerRef)) borrowerFullNames.set(borrowerRef, nameEntry!.full_name);
       const vv = v as FactIncomeValue;
-      const period: IncomePeriod = {
-        year: vv.period?.year ?? new Date().getFullYear(),
-        start_date: vv.period?.start_date,
-        end_date: vv.period?.end_date,
-      };
-      const inc: IncomeExtraction = {
-        source_type: vv.source_type ?? 'other',
-        employer: vv.employer,
-        period,
-        amount: vv.amount,
-        currency: vv.currency ?? 'USD',
-        frequency: vv.frequency,
-        evidence: evidenceWithProximity(fact.evidence ?? [], nameEntry?.proximity_score),
-      };
-      const list = borrowerIncomes.get(borrowerRef) || [];
-      list.push(inc);
-      borrowerIncomes.set(borrowerRef, list);
+
+      // For individual income sources (W-2, paystub), attribute to best name only
+      // For joint sources (tax_return_1040), attribute to all qualifying names
+      const isJointSource = vv.source_type === 'tax_return_1040';
+
+      if (isJointSource) {
+        // Joint income: attribute to ALL qualifying names
+        const qualifyingNames = getQualifyingNames(fact);
+        if (qualifyingNames.length === 0) continue;
+
+        if (qualifyingNames.length > 1) {
+          logger.debug('Attribution: joint income assigned to multiple borrowers', {
+            names: qualifyingNames.map((n) => n.full_name),
+            source_type: vv.source_type,
+            amount: vv.amount,
+            proximity_score: qualifyingNames[0].proximity_score,
+          });
+        }
+
+        for (const nameEntry of qualifyingNames) {
+          const borrowerRef = normalizeName(nameEntry.full_name);
+          if (!borrowerFullNames.has(borrowerRef)) borrowerFullNames.set(borrowerRef, nameEntry.full_name);
+          const period: IncomePeriod = {
+            year: vv.period?.year ?? new Date().getFullYear(),
+            start_date: vv.period?.start_date,
+            end_date: vv.period?.end_date,
+          };
+          const inc: IncomeExtraction = {
+            source_type: vv.source_type ?? 'other',
+            employer: vv.employer,
+            period,
+            amount: vv.amount,
+            currency: vv.currency ?? 'USD',
+            frequency: vv.frequency,
+            evidence: evidenceWithProximity(fact.evidence ?? [], nameEntry.proximity_score),
+          };
+          const list = borrowerIncomes.get(borrowerRef) || [];
+          list.push(inc);
+          borrowerIncomes.set(borrowerRef, list);
+        }
+      } else {
+        // Individual income (W-2, paystub, etc.): attribute to best name only
+        const nameEntry = chooseBestName(fact);
+        const borrowerRef = nameEntry ? normalizeName(nameEntry.full_name) : null;
+        if (!borrowerRef) continue;
+        if (!borrowerFullNames.has(borrowerRef)) borrowerFullNames.set(borrowerRef, nameEntry!.full_name);
+        const period: IncomePeriod = {
+          year: vv.period?.year ?? new Date().getFullYear(),
+          start_date: vv.period?.start_date,
+          end_date: vv.period?.end_date,
+        };
+        const inc: IncomeExtraction = {
+          source_type: vv.source_type ?? 'other',
+          employer: vv.employer,
+          period,
+          amount: vv.amount,
+          currency: vv.currency ?? 'USD',
+          frequency: vv.frequency,
+          evidence: evidenceWithProximity(fact.evidence ?? [], nameEntry?.proximity_score),
+        };
+        const list = borrowerIncomes.get(borrowerRef) || [];
+        list.push(inc);
+        borrowerIncomes.set(borrowerRef, list);
+      }
     }
     // employer_name facts: omit from persistence for MVP (or could attach to next income fact)
   }
