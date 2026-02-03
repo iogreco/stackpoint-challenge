@@ -1,4 +1,4 @@
-.PHONY: build up down logs test test-e2e clean clean-all reset obs-setup obs-load obs-cleanup install
+.PHONY: build up down logs test test-e2e test-e2e-no-llm clean clean-all reset obs-setup obs-load obs-cleanup install
 
 # Default target
 all: build up
@@ -31,10 +31,16 @@ logs-%:
 test:
 	npm test
 
-# Run E2E tests with isolated compose stack
+# Run E2E tests (no OpenAI): pipeline health/sync only, isolated compose stack
+test-e2e-no-llm:
+	docker compose -f docker-compose.yml -f docker-compose.test.yml up -d
+	npm run test:e2e -- --testPathPattern="pipeline.e2e"
+	docker compose -f docker-compose.yml -f docker-compose.test.yml down
+
+# Run full E2E tests (including OpenAI extraction-quality). Requires OPENAI_API_KEY (in .env or exported).
 test-e2e:
 	docker compose -f docker-compose.yml -f docker-compose.test.yml up -d
-	npm run test:e2e
+	@( [ -f .env ] && set -a && . ./.env && set +a; RUN_E2E_TESTS=1 npm run test:e2e )
 	docker compose -f docker-compose.yml -f docker-compose.test.yml down
 
 # Reset state for clean test (fresh Postgres/Redis, remove service dist; keeps node_modules and packages/shared dist)

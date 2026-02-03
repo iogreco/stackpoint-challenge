@@ -135,6 +135,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       LLM_MODEL_TEXT: gpt-5.1
       LLM_REQUEST_TIMEOUT_MS: 120000
+      JOB_LOCK_DURATION_MS: 300000
       DEBUG_LLM_PROMPTS: ${DEBUG_LLM_PROMPTS:-}
       DEBUG_LLM_PROMPTS_DIR: /debug-output
     volumes:
@@ -159,6 +160,8 @@ services:
       OBJECT_STORE_PATH: /object-store
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       LLM_MODEL_PDF: gpt-5.1
+      LLM_REQUEST_TIMEOUT_MS: 120000
+      JOB_LOCK_DURATION_MS: 300000
       DEBUG_LLM_PROMPTS: ${DEBUG_LLM_PROMPTS:-}
       DEBUG_LLM_PROMPTS_DIR: /debug-output
     volumes:

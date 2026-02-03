@@ -131,9 +131,10 @@ describe('E2E Extraction Quality', () => {
     beforeAll(async () => {
       if (shouldSkip) return;
 
-      // Trigger full sync
+      // Trigger full sync - process at least 4 documents to get SSN from multiple sources
+      // (1040 has John/Mary SSN, EVOE has John SSN)
       console.log('Triggering document sync...');
-      const syncResult = await syncAndWait('fixture_source', undefined, EXTRACTION_TIMEOUT_MS);
+      const syncResult = await syncAndWait('fixture_source', 4, EXTRACTION_TIMEOUT_MS);
       correlationId = syncResult.correlationId;
       console.log(`Sync started with correlation_id: ${correlationId}`);
 
