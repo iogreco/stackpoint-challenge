@@ -226,8 +226,9 @@ For full detail on orchestration and resilience (BullMQ semantics, backpressure,
 | Variable                     | Default      | Description                          |
 |-----------------------------|-------------|--------------------------------------|
 | OPENAI_API_KEY              | —           | Required                             |
-| LLM_MODEL_TEXT              | gpt-4o-mini | Text extraction                      |
-| LLM_MODEL_PDF               | gpt-4o      | PDF vision fallback                  |
+| LLM_MODEL_TEXT              | gpt-5.1     | Text extraction model                |
+| LLM_MODEL_PDF               | gpt-5.1     | PDF vision fallback model            |
+| LLM_MODEL_CLASSIFICATION    | gpt-5-nano  | Document classification model        |
 | BULLMQ_DEFAULT_ATTEMPTS     | 5           | Max job retries                      |
 | MAX_QUEUE_DEPTH_WARNING     | 5000        | Queue depth warning                  |
 | MAX_QUEUE_DEPTH_REJECT      | 10000       | Adapter reject threshold             |
