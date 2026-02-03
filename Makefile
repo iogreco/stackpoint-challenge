@@ -43,17 +43,17 @@ test-e2e:
 	@( [ -f .env ] && set -a && . ./.env && set +a; RUN_E2E_TESTS=1 npm run test:e2e )
 	docker compose -f docker-compose.yml -f docker-compose.test.yml down
 
-# Reset state for clean test (fresh Postgres/Redis, remove service dist; keeps node_modules and packages/shared dist)
+# Reset state for clean test (fresh Postgres/Redis/test DB, remove service dist; keeps node_modules and packages/shared dist)
 reset:
-	docker compose down -v --rmi local
+	docker compose -f docker-compose.yml -f docker-compose.test.yml down -v --rmi local
 	rm -rf services/*/dist
 
-# Clean up volumes, images, and build artifacts (keeps node_modules so IDE/TypeScript keep working)
+# Clean: tear down stack + volumes + local images, remove service dist only. Keeps node_modules and packages/*/dist.
 clean: reset
 
-# Full wipe including dependencies (use when you need a clean install)
+# Clean-all: same as clean but also removes all node_modules and all dist. Use for a full reinstall (e.g. after Node/dep changes).
 clean-all:
-	docker compose down -v --rmi local
+	docker compose -f docker-compose.yml -f docker-compose.test.yml down -v --rmi local
 	rm -rf node_modules
 	rm -rf packages/*/node_modules
 	rm -rf packages/*/dist
