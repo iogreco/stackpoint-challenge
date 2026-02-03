@@ -18,7 +18,7 @@ An event-driven document extraction pipeline that extracts borrower PII, income 
 # Install dependencies (and build shared package via prepare script)
 make install
 
-# Set OpenAI API key
+# Set OpenAI API key (or add OPENAI_API_KEY=... to a .env file; see .env.example)
 export OPENAI_API_KEY=your-api-key-here
 
 # Build images and start all services
