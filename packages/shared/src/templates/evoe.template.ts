@@ -3,85 +3,85 @@
  *
  * Document semantics:
  * - Verifies employment for a specific employee
- * - Contains employer information (company responding to verification)
- * - Employee name and employment details belong to the borrower
+ * - Extract: SSN (partial OK - useful for validation), income, employer_name
+ * - Do NOT extract addresses (always employer's address, not borrower's)
  */
 
 import type { ExtractionTemplate } from './types';
 
 export const EVOE_TEMPLATE: ExtractionTemplate = {
   documentType: 'evoe',
-  description: 'Employment Verification (VOE) - extracts verified employment and income info',
+  description: 'Employment Verification (VOE) - extracts SSN, income, and employer name only',
 
   systemPrompt: `You are a document extraction specialist for Employment Verification (VOE/EVOE) documents.
 
-CRITICAL EXTRACTION RULE:
-Multiple facts of the same fact_type are expected. Do not stop after finding one. Extract ALL valid instances present in the document.
+WHAT TO EXTRACT (only these 3 fact types):
+1. ssn - Employee SSN (even if partially masked like XXX-XX-1234, extract it for validation)
+2. income - Verified salary/wages with source_type: "evoe"
+3. employer_name - The employer/company name
 
-DOCUMENT STRUCTURE:
-1. EMPLOYER/VERIFIER SECTION:
-   - Company name (employer being verified)
-   - Company address (do NOT extract as borrower address)
-   - Contact information
+WHAT NOT TO EXTRACT:
+- DO NOT extract any address facts - any address in EVOE is the employer's address, not the borrower's
 
-2. EMPLOYEE SECTION:
-   - Employee name (the person being verified - this is the BORROWER)
-   - Employee address (may or may not be present)
-   - Employment dates (start date, current/end date)
-   - Position/title
+The EMPLOYEE named in the document is the borrower.
 
-3. INCOME VERIFICATION:
-   - Current salary/hourly rate
-   - Pay frequency
-   - YTD earnings
-   - Probability of continued employment
+VALUE OBJECT FORMAT (CRITICAL - follow exactly):
+The value object must ALWAYS include address, string_value, and income fields.
 
-EXTRACTION RULES:
-1. The EMPLOYEE is the borrower - extract their information
-2. CRITICAL - ADDRESS PROHIBITION:
-   - DO NOT extract ANY fact_type: "address" from EVOE documents
-   - There should be ZERO address facts in your response
-   - Any address visible in the document is the EMPLOYER'S address, NOT the employee's
-   - EVOEs verify employment but do NOT contain employee home addresses
-   - If you see ANY address, IGNORE IT completely
-3. Extract employer_name for income context
-4. Extract verified income with source_type: "evoe"
-5. All income facts belong to the employee with proximity_score: 3
-6. Extract SSN if present (usually partially masked like xxx-xx-5000)
+For ssn facts:
+{
+  "address": { "street1": "", "street2": "", "city": "", "state": "", "zip": "" },
+  "string_value": "<the SSN, e.g. XXX-XX-1234>",
+  "income": { "amount": 0, "currency": "USD", "frequency": "annual", "period": { "year": 1900, "start_date": "", "end_date": "" }, "employer": "", "source_type": "other" }
+}
 
-For each fact provide:
-- fact_type and value
-- evidence with document_id, source_filename, page_number, quote, evidence_source_context
-- names_in_proximity: Employee name with proximity_score: 3
+For income facts:
+{
+  "address": { "street1": "", "street2": "", "city": "", "state": "", "zip": "" },
+  "string_value": "",
+  "income": {
+    "amount": <number>,
+    "currency": "USD",
+    "frequency": "annual",
+    "period": { "year": <4-digit year e.g. 2025>, "start_date": "", "end_date": "" },
+    "employer": "<employer name>",
+    "source_type": "evoe"
+  }
+}
 
-evidence_source_context values for EVOE:
-- evoe_verification: Employment and income verification sections
-- other: Other locations
+For employer_name facts:
+{
+  "address": { "street1": "", "street2": "", "city": "", "state": "", "zip": "" },
+  "string_value": "<employer name>",
+  "income": { "amount": 0, "currency": "USD", "frequency": "annual", "period": { "year": 1900, "start_date": "", "end_date": "" }, "employer": "", "source_type": "other" }
+}
 
-proximity_score for EVOE:
-- Employee name gets proximity_score: 3 for all employee-related facts
-- Employer information should have employee with proximity_score: 0 if extracting employer details
+CRITICAL RULES:
+- period.year MUST be >= 1900 (use current year for income facts, 1900 for defaults)
+- address.zip MUST always be present (use empty string "")
+- Employee name goes in names_in_proximity with proximity_score: 3
 
-value object format: Always include address, string_value, and income. Fill only the relevant one based on fact_type; use empty/defaults for others.
-Data formats: Names "First Last", ZIP 5 or 9 digits, SSN XXX-XX-XXXX, dates YYYY-MM-DD, state 2-letter, currency USD.`,
+evidence_source_context: Use "evoe_verification" for all facts.
+Data formats: Names "First Last", SSN as shown (XXX-XX-XXXX), currency USD.`,
 
-  userPromptTemplate: `Extract facts from this Employment Verification (VOE/EVOE) document.
+  userPromptTemplate: `Extract SSN, income, and employer name from this Employment Verification document.
 
 DOCUMENT METADATA (use these exact values in all evidence):
 - document_id: {{document_id}}
 - source_filename: {{source_filename}}
 
-IMPORTANT EVOE RULES:
-- The EMPLOYEE is the borrower - extract their information
-- ABSOLUTELY NO ADDRESS FACTS: Do not include any fact_type: "address" in your response
-- Any address in the document is the employer's address - IGNORE IT
-- Extract verified income with source_type: "evoe"
-- Extract SSN if present
-- Extract employer_name
-- Employee gets proximity_score: 3 for income/SSN facts
+EXTRACT ONLY:
+1. ssn - Even if partially masked (XXX-XX-1234), useful for validation
+2. income - Annual salary with source_type: "evoe", year must be >= 1900
+3. employer_name - Company name
+
+DO NOT EXTRACT:
+- Any addresses (they are employer addresses, not borrower addresses)
+
+Employee name should be in names_in_proximity with proximity_score: 3.
 
 DOCUMENT TEXT BY PAGE:
 {{page_text}}
 
-Return a facts array. Each fact must have fact_type, value, evidence (at least one), and names_in_proximity.`,
+Return a facts array with only ssn, income, and employer_name facts.`,
 };
