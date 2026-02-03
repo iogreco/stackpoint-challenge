@@ -240,7 +240,7 @@ The Adapter is the only component that performs **pull** integrations. Downstrea
 3. For each listed document:
    - download PDF bytes,
    - compute `document_id = sha256(pdf_bytes)` (content-addressed),
-   - store to object store at `object-store/raw/{source_system}/{document_id}.pdf` (idempotent overwrite),
+   - store to object store at `object-store/raw/{source_system}/{document_id}.pdf` (filename uses `document_id` hex without the `sha256:` prefix; idempotent overwrite),
    - enqueue a `document_available` message:
      - `correlation_id`, `document_id`, `raw_uri`, `source_system`, `source_doc_id`, `source_filename`, `discovered_at`.
 4. Return `202 Accepted` with `correlation_id` immediately after scheduling/enqueuing.
@@ -255,16 +255,16 @@ The Adapter is the only component that performs **pull** integrations. Downstrea
 2. Run LLM extraction on **text only** and produce an `ExtractionResult` that conforms to `docs/contracts/extraction_result.schema.json` (fact-based: facts with value, evidence, names_in_proximity and proximity_score).
 3. Validate response against schema + run lightweight consistency checks (see §8).
 4. Determine completeness:
-   - If all required fields satisfied → enqueue `persist_borrower`.
+   - If all required fields satisfied → enqueue `persist_records`.
    - Else → enqueue `extract_pdf` (stage 2), passing partial extraction + missing-fields list.
-   - If stage 2 is disabled/unavailable → enqueue `persist_borrower` with `completeness_status=partial`.
+   - If stage 2 is disabled/unavailable → enqueue `persist_records` with `completeness_status=partial`.
 
 ### 3.3 Stage 2: PDF fallback extraction (PDF Fallback Extractor Worker)
 
 1. Send **the PDF file** to the provider’s PDF input feature, requesting only missing fields and evidence.
 2. Merge: `merged = deepMerge(stage1, stage2)` with “stage2 only fills null/unknown” semantics.
 3. Re-validate schema and consistency.
-4. Enqueue `persist_borrower`.
+4. Enqueue `persist_records`.
 
 ### 3.4 Persistence (Persistence Worker)
 
@@ -276,7 +276,7 @@ The persistence stage turns an `ExtractionResult` into durable read models.
    - Resolve matches and merge extracted facts using deterministic rules with:
      - **document-type–weighted confidence scoring** (to reduce systematic misattribution, e.g., employer address appearing as borrower address)
      - **strict income identity keys** to prevent collisions across representations (e.g., W-2 vs VOE vs paystub)
-   - Detailed matching/merge semantics (including scoring, tie-breaking, and income identity) are specified in `docs/matching-and-merge-spec.v2.md`.
+   - Detailed matching/merge semantics (including scoring, tie-breaking, and income identity) are specified in `docs/matching-and-merge-spec.md`.
    - Note: ZIP-based keying is a simplification for this take-home. Production systems use full postal normalization plus stronger identifiers (SSN, loan/application IDs, verified account IDs).
 
 2. **Application / party-group handling (multi-party)**
@@ -289,7 +289,7 @@ The persistence stage turns an `ExtractionResult` into durable read models.
      - upsert `borrowers` (one per borrower_key)
      - upsert `applications` (when loan number present)
      - upsert join rows `application_parties`
-     - upsert `borrower_incomes` (keyed by `(borrower_id, income_identity_key, document_id)` where `income_identity_key` is derived from `(source_type, employer_key, period)`; see `docs/matching-and-merge-spec.v2.md`)
+     - upsert `borrower_incomes` (keyed by `(borrower_id, income_identity_key, document_id)` where `income_identity_key` is derived from `(source_type, employer_key, period)`; see `docs/matching-and-merge-spec.md`)
      - upsert `borrower_identifiers` (keyed by `(borrower_id, type, value, document_id)`)
      - upsert `documents` (keyed by `document_id`) and attach document references to borrower/application records
      - persist **evidence** rows (page + quote) for each extracted field/value
@@ -304,7 +304,7 @@ The **Query API** serves low-latency read queries. The canonical endpoints and e
 
 - `GET /borrowers/{borrower_id}`
 - `GET /borrowers?name=...&zip=...&status=...&limit=...&cursor=...`
-- `GET /borrowers/by-loan/{loan_number}` (optional)
+- `GET /applications/by-loan/{loan_number}`
 
 ---
 
@@ -539,7 +539,7 @@ This system explicitly treats extracted values as **candidates**, then applies d
 - **Document-type–weighted confidence scoring** so repeated but lower-authority locations (e.g., employer address blocks) do not overpower higher-authority borrower-address evidence.
 - **Strict income identity keys** `(source_type, employer, period)` to keep distinct representations separate and avoid accidental merges.
 
-See `docs/matching-and-merge-spec.v2.md` for the full matching/merge rules and scoring.
+See `docs/matching-and-merge-spec.md` for the full matching/merge rules and scoring.
 
 
 ---
@@ -649,7 +649,7 @@ After each extraction:
 - required fields present? (name + zip at minimum)
 - numeric sanity: amounts >= 0, years plausible
 - cross-field checks:
-  - doc-type–weighted confidence scoring applied during merge; ambiguous ties emit warnings (see `docs/matching-and-merge-spec.v2.md`)
+  - doc-type–weighted confidence scoring applied during merge; ambiguous ties emit warnings (see `docs/matching-and-merge-spec.md`)
   - if income_type is W2, employer should exist
   - if Schedule C, net profit should exist
 
@@ -689,11 +689,13 @@ Isolation allows independent autoscaling and resource limits.
 All services expose a `/metrics` endpoint. Prometheus scrapes these endpoints and Grafana renders a minimal operational view.
 
 **Metrics emitted**
-- `queue_jobs_waiting{queue}`: current queue depth for `extract_text`, `extract_pdf`, `persist_borrower`
-- `jobs_processed_total{queue, outcome}`: processed jobs counter (`success` / `failed` / `dlq`)
-- `job_attempts_total{queue}`: total attempts (includes retries)
-- `stage_duration_seconds_bucket{stage}`: histogram per stage (`extract_text`, `extract_pdf`, `persist_borrower`)
-- `end_to_end_latency_seconds_bucket`: histogram from ingest acceptance to successful persist
+- `stackpoint_queue_depth{queue}`: current queue depth (waiting + active) for `document_available`, `extract_text`, `extract_pdf`, `persist_records`
+- `stackpoint_queue_metrics{queue, state}`: queue metrics by state (`waiting`, `active`, `completed`, `failed`, `delayed`)
+- `stackpoint_jobs_processed_total{queue, status}`: processed jobs counter (`success` / `failed`)
+- `stackpoint_job_duration_seconds{queue, status}`: histogram of job processing duration per queue
+- `stackpoint_extraction_duration_seconds{extraction_mode}`: duration of document extraction (text vs PDF fallback)
+- `stackpoint_http_request_duration_seconds{method, path, status}`: HTTP request latency (Adapter API, Query API)
+- `stackpoint_db_query_duration_seconds{operation}`: database query latency (persistence, query API)
 
 These metrics are sufficient to validate backpressure behavior, throughput, and stability under load.
 ### 10.2 Structured logs
