@@ -1,11 +1,14 @@
 # Override for E2E testing
 # Use with: docker compose -f docker-compose.yml -f docker-compose.test.yml up
+# Uses a dedicated Postgres volume so stackpoint_test is created on first run.
 
 services:
-  # Use test database
+  # Use test database (separate volume so stackpoint_test exists; base compose uses "stackpoint")
   postgres:
     environment:
       POSTGRES_DB: stackpoint_test
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U stackpoint_user -d stackpoint_test"]
 
@@ -26,3 +29,7 @@ services:
   query-api:
     environment:
       DATABASE_URL: postgresql://stackpoint_user:stackpoint_pass@postgres:5432/stackpoint_test
+
+volumes:
+  postgres_test_data:
+    driver: local
