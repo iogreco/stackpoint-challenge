@@ -2,9 +2,9 @@
  * Closing Disclosure Extraction Template
  *
  * Document semantics:
- * - Extract PROPERTY address (the loan collateral), not borrower mailing address
- * - ALL borrowers on the loan share the property
- * - Loan number is a key identifier
+ * - Extract ONLY the loan number (Loan ID)
+ * - Do NOT extract property address (it's the collateral, not borrower's residence)
+ * - Loan number links borrowers to their loan application
  * - May have multiple borrowers (primary + co-borrower)
  */
 
@@ -12,74 +12,55 @@ import type { ExtractionTemplate } from './types';
 
 export const CLOSING_DISCLOSURE_TEMPLATE: ExtractionTemplate = {
   documentType: 'closing_disclosure',
-  description: 'Loan closing disclosure - extracts property address, loan number, and borrower info',
+  description: 'Loan closing disclosure - extracts loan number only',
 
   systemPrompt: `You are a document extraction specialist for closing disclosures (loan closing documents).
 
-CRITICAL EXTRACTION RULE:
-Multiple facts of the same fact_type are expected. Do not stop after finding one. Extract ALL valid instances present in the document. Ensure ALL borrowers and co-borrowers are captured.
+EXTRACTION SCOPE - LOAN NUMBER ONLY:
+From closing disclosures, extract ONLY the loan number (Loan ID). Do NOT extract addresses or other information.
 
-DOCUMENT STRUCTURE:
-Closing disclosures contain:
-1. HEADER:
-   - Closing date
-   - Loan ID / Loan number (EXTRACT THIS)
+WHY ONLY LOAN NUMBER:
+- The property address in a closing disclosure is the COLLATERAL being purchased/refinanced
+- It is NOT the borrower's current residence address
+- Extracting it would create incorrect borrower address data
+- The loan number is the key identifier that links borrowers to their loan application
 
-2. BORROWER SECTION:
-   - Borrower name(s) - may include co-borrower
-   - Borrower mailing address (for correspondence)
-
-3. PROPERTY SECTION:
-   - Property address (EXTRACT THIS - the collateral for the loan)
-   - Property type
-
-4. LOAN TERMS:
-   - Loan amount
-   - Interest rate
-   - Monthly payment
-
-5. SELLER SECTION (if present):
-   - Seller name(s) - do NOT extract as borrower
+DOCUMENT STRUCTURE (for reference):
+1. HEADER: Contains Loan ID / Loan number - EXTRACT THIS
+2. BORROWER SECTION: Contains borrower names - use for names_in_proximity
+3. PROPERTY SECTION: Contains property address - DO NOT EXTRACT
+4. SELLER SECTION: Contains seller names - IGNORE
 
 EXTRACTION RULES:
-1. Extract PROPERTY address (the address of the property being purchased/refinanced)
-2. Do NOT extract borrower mailing address separately unless it differs from property
-3. Extract loan_number as identifier
-4. ALL borrowers/co-borrowers share the property - each gets proximity_score: 3
-5. Do NOT include seller names as borrowers
+1. Extract ONLY loan_number as a fact
+2. Do NOT extract any addresses
+3. ALL borrowers/co-borrowers listed should be in names_in_proximity with proximity_score: 3
+4. Do NOT include seller names in names_in_proximity
 
-For each fact provide:
-- fact_type and value
+For the loan_number fact provide:
+- fact_type: "loan_number"
+- value: { string_value: "<the loan number>", address: {empty}, income: {defaults} }
 - evidence with document_id, source_filename, page_number, quote, evidence_source_context
 - names_in_proximity: ALL borrower names with proximity_score: 3
 
-evidence_source_context values for closing disclosures:
-- closing_disclosure_borrower_section: Borrower information section
-- other: Other locations
+evidence_source_context: Use "closing_disclosure_borrower_section" or "other"
 
-proximity_score for closing disclosures:
-- CRITICAL: ALL borrowers (primary + co-borrower) MUST get proximity_score: 3 for property address and loan number
-- This is SEMANTIC proximity, not physical line distance - borrowers OWN the property regardless of where their names appear
-- Even if borrower names appear many lines away from the property address, they still get proximity_score: 3
-- Do NOT include seller in names_in_proximity for borrower-related facts
+value object format: Always include address, string_value, and income. For loan_number, fill string_value; use empty/defaults for others.
+Data formats: Names "First Last", loan numbers as they appear.`,
 
-value object format: Always include address, string_value, and income. Fill only the relevant one based on fact_type; use empty/defaults for others.
-Data formats: Names "First Last", ZIP 5 or 9 digits, loan numbers as they appear, state 2-letter.`,
-
-  userPromptTemplate: `Extract facts from this closing disclosure.
+  userPromptTemplate: `Extract the loan number from this closing disclosure.
 
 DOCUMENT METADATA (use these exact values in all evidence):
 - document_id: {{document_id}}
 - source_filename: {{source_filename}}
 
-IMPORTANT CLOSING DISCLOSURE RULES:
-- Extract PROPERTY address (the loan collateral), not borrower mailing address
-- Extract loan_number as identifier
-- CRITICAL: ALL borrowers MUST have proximity_score: 3 (they OWN the property - this is semantic, not physical distance)
-- Do NOT include seller names in names_in_proximity for borrower facts
+CRITICAL RULES:
+- Extract ONLY the loan number (Loan ID) - nothing else
+- Do NOT extract any addresses (property address is collateral, not borrower residence)
+- Include ALL borrower names (not seller) in names_in_proximity with proximity_score: 3
 
 DOCUMENT TEXT BY PAGE:
 {{page_text}}
 
-Return a facts array. Each fact must have fact_type, value, evidence (at least one), and names_in_proximity.`,
+Return a facts array with ONLY the loan_number fact.`,
 };
