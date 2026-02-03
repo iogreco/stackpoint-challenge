@@ -14,6 +14,7 @@ export interface Config {
   workerConcurrency: number;
   maxJobAttempts: number;
   backoffBaseMs: number;
+  jobLockDurationMs: number;
 
   // Backpressure Controls
   maxQueueDepthWarning: number;
@@ -55,6 +56,7 @@ export const config: Config = {
   workerConcurrency: parseInt(process.env.WORKER_CONCURRENCY || '5', 10),
   maxJobAttempts: parseInt(process.env.BULLMQ_DEFAULT_ATTEMPTS || '5', 10),
   backoffBaseMs: parseInt(process.env.BACKOFF_BASE_MS || '2000', 10),
+  jobLockDurationMs: parseInt(process.env.JOB_LOCK_DURATION_MS || '180000', 10), // 3 minutes
 
   // Backpressure Controls
   maxQueueDepthWarning: parseInt(process.env.MAX_QUEUE_DEPTH_WARNING || '5000', 10),

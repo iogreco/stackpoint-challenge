@@ -130,6 +130,9 @@ export function createWorker<TData, TResult>(
   const worker = new Worker<TData, TResult>(queueName, processor, {
     connection: getRedisConnection(),
     concurrency: options.concurrency || config.workerConcurrency,
+    // Increase lock duration to prevent jobs from being marked as stalled
+    // during long-running LLM requests. Default is 30s which is too short.
+    lockDuration: config.jobLockDurationMs,
   });
 
   worker.on('completed', (job, result) => {
@@ -154,6 +157,7 @@ export function createWorker<TData, TResult>(
   logger.info('Worker started', {
     queue: queueName,
     concurrency: options.concurrency || config.workerConcurrency,
+    lockDurationMs: config.jobLockDurationMs,
   });
 
   return worker;

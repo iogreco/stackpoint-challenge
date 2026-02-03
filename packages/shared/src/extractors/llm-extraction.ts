@@ -434,6 +434,7 @@ export async function extractWithLlmTemplate(
   const openai = new OpenAI({
     apiKey: options.apiKey || process.env.OPENAI_API_KEY || config.openaiApiKey,
     timeout: timeoutMs,
+    maxRetries: 0, // Disable SDK retries - let BullMQ handle retries at job level
   });
 
   // Format text with smart truncation
