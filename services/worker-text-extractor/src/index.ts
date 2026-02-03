@@ -1,8 +1,9 @@
 /**
  * Text Extractor Worker
  *
- * Extracts text from PDF, calls LLM for structured extraction,
- * enqueues persist_records or extract_pdf fallback.
+ * Extracts text from PDF, classifies document type, then uses the
+ * appropriate extractor from the registry to extract facts.
+ * Enqueues persist_records or extract_pdf fallback.
  */
 
 import { Job } from 'bullmq';
@@ -18,20 +19,55 @@ import {
   type ExtractPdfJob,
   type PersistRecordsJob,
   type DocumentInfo,
+  type FactExtractionResult,
   jobsProcessedCounter,
   jobDurationHistogram,
   extractionDurationHistogram,
   documentsProcessedCounter,
+  // Extractor registry
+  getExtractorOrThrow,
+  type ExtractionContext,
 } from '@stackpoint/shared';
 import { extractTextFromPdf } from './lib/pdf';
-import { extractWithLlm, buildFactExtractionResult, needsPdfFallbackFacts } from './lib/llm';
+import { classifyDocument, type ClassificationWithMetadata } from './lib/llm';
+
+const PROMPT_VERSION = '4.0.0-modular';
 
 // Create queues
 const extractPdfQueue = createQueue<ExtractPdfJob, void>(QUEUE_NAMES.EXTRACT_PDF);
 const persistRecordsQueue = createQueue<PersistRecordsJob, void>(QUEUE_NAMES.PERSIST_RECORDS);
 
 /**
- * Process extract_text job
+ * Build FactExtractionResult from extractor output
+ */
+function buildFactExtractionResult(
+  extractorResult: { facts: any[]; warnings: string[]; extractionMethod: string; metadata: any },
+  documentInfo: DocumentInfo,
+  correlationId: string,
+  classification: ClassificationWithMetadata
+): FactExtractionResult {
+  return {
+    schema_version: '2.0',
+    correlation_id: correlationId,
+    document: documentInfo,
+    extraction_mode: 'text',
+    facts: extractorResult.facts,
+    warnings: extractorResult.warnings,
+    extraction_metadata: {
+      provider: 'openai',
+      model: extractorResult.metadata.model || classification.model,
+      request_id: extractorResult.metadata.requestId || `ext_${Date.now()}`,
+      prompt_version: PROMPT_VERSION,
+      document_type: classification.document_type,
+      classification_model: classification.model,
+      classification_confidence: classification.confidence,
+    },
+    created_at: new Date().toISOString(),
+  };
+}
+
+/**
+ * Process extract_text job using modular extractor architecture
  */
 async function processExtractText(job: Job<ExtractTextJob, void>): Promise<void> {
   const {
@@ -77,24 +113,47 @@ async function processExtractText(job: Job<ExtractTextJob, void>): Promise<void>
           discovered_at,
         };
 
-        // Step 3: Call LLM for extraction (two-step: classify then extract)
-        const { result: llmResult, requestId, model, classification } = await extractWithLlm(
+        // Step 3: Classify document type
+        const pageText = pdfResult.pages.map(p => `--- Page ${p.pageNumber} ---\n${p.text}`).join('\n\n');
+        const classification = await classifyDocument(pageText, documentInfo);
+
+        logger.info('Document classified, dispatching to extractor', {
+          document_id,
+          document_type: classification.document_type,
+          confidence: classification.confidence,
+        });
+
+        // Step 4: Get extractor for document type and extract facts
+        const extractor = getExtractorOrThrow(classification.document_type);
+        const extractionContext: ExtractionContext = {
+          correlationId: correlation_id,
+          extractionModel: process.env.LLM_MODEL_TEXT || config.llmModelText,
+          timeoutMs: config.llmRequestTimeoutMs,
+        };
+
+        const extractorResult = await extractor.extract(
           pdfResult.pages,
           documentInfo,
-          correlation_id
+          extractionContext
         );
 
-        // Step 4: Build fact extraction result with classification metadata
+        logger.info('Extractor completed', {
+          document_id,
+          document_type: classification.document_type,
+          extraction_method: extractorResult.extractionMethod,
+          fact_count: extractorResult.facts.length,
+          strategy: extractor.strategy,
+        });
+
+        // Step 5: Build fact extraction result
         const factExtractionResult = buildFactExtractionResult(
-          llmResult,
+          extractorResult,
           documentInfo,
           correlation_id,
-          model,
-          requestId,
           classification
         );
 
-        // Step 5: Validate against schema
+        // Step 6: Validate against schema
         const validation = validateExtraction(factExtractionResult);
 
         if (!validation.valid) {
@@ -104,7 +163,7 @@ async function processExtractText(job: Job<ExtractTextJob, void>): Promise<void>
 
           const fallbackPayload: ExtractPdfJob = {
             ...job.data,
-            fact_extraction_result: { facts: llmResult.facts },
+            fact_extraction_result: { facts: extractorResult.facts },
           };
 
           await extractPdfQueue.add('extract_pdf', fallbackPayload, {
@@ -115,13 +174,13 @@ async function processExtractText(job: Job<ExtractTextJob, void>): Promise<void>
           return;
         }
 
-        // Step 6: Check if PDF fallback is needed (no facts)
-        if (needsPdfFallbackFacts(llmResult)) {
+        // Step 7: Check if PDF fallback is needed (no facts, but not skip strategy)
+        if (extractorResult.facts.length === 0 && extractor.strategy !== 'skip') {
           logger.info('Text extraction produced no facts, falling back to PDF', { document_id });
 
           const fallbackPayload: ExtractPdfJob = {
             ...job.data,
-            fact_extraction_result: { facts: llmResult.facts },
+            fact_extraction_result: { facts: extractorResult.facts },
           };
 
           await extractPdfQueue.add('extract_pdf', fallbackPayload, {
@@ -131,7 +190,7 @@ async function processExtractText(job: Job<ExtractTextJob, void>): Promise<void>
           return;
         }
 
-        // Step 7: Enqueue persist_records (fact-based result; persistence will run attribution)
+        // Step 8: Enqueue persist_records
         const persistPayload: PersistRecordsJob = {
           event_type: 'extraction.complete',
           correlation_id,
@@ -145,6 +204,7 @@ async function processExtractText(job: Job<ExtractTextJob, void>): Promise<void>
         logger.info('Enqueued persist_records', {
           document_id,
           fact_count: factExtractionResult.facts.length,
+          extraction_method: extractorResult.extractionMethod,
         });
 
         // Record metrics
@@ -173,7 +233,7 @@ async function processExtractText(job: Job<ExtractTextJob, void>): Promise<void>
 // Create and start the worker
 const worker = createWorker<ExtractTextJob, void>(QUEUE_NAMES.EXTRACT_TEXT, processExtractText);
 
-logger.info('Text extractor worker started');
+logger.info('Text extractor worker started (modular architecture)');
 
 // Graceful shutdown
 async function shutdown(signal: string) {
