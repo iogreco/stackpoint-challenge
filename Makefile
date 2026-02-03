@@ -79,7 +79,7 @@ health:
 sync:
 	curl -X POST http://localhost:8080/sync \
 		-H "Content-Type: application/json" \
-		-d '{"source_system":"fixture_source","max_documents":1}'
+		-d '{"source_system":"fixture_source","max_documents":10}'
 
 # List borrowers
 borrowers:
