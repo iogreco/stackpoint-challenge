@@ -157,35 +157,41 @@ All application services (Adapter API, Query API, workers) are Node.js/TypeScrip
                              │ - GET /documents (list)       │
                              │ - GET /documents/{id} (bytes) │
                              └───────────────┬───────────────┘
-                                             │ (pull: list + download)
-                                             ▼
-┌───────────────────┐          ┌──────────────────────────┐          ┌───────────────────────────┐
-│ Clients / LoadGen │─────────►│ Adapter API              │─────────►│ Ingestion Worker          │
-│ (triggers sync)   │  POST    │ - POST /sync             │  emits   │ - validates raw_uri       │
-└───────────────────┘  /sync   │ - store raw PDFs         │  work    │ - emits extract_text      │
-                               │ - emit document_available│  items   └─────────────┬─────────────┘
-                               └─────────────┬────────────┘                        │
-                                             │                                     │
-                                             │                                     ▼
-                                             │                       ┌───────────────────────────┐
-                                             │                       │ Extraction Workers        │
-                                             │                       │ - text-first              │
-                                             │                       │ - PDF fallback (if needed)│
-                                             │                       └────────────┬──────────────┘
-                                             │                                    │
-                                             │                                    ▼
-                                             │                       ┌───────────────────────────┐
-                                             │                       │ LLM Provider              │
-                                             │                       │ - schema extraction       │
-                                             │                       └───────────────────────────┘
+                                             ▲
+                                             │ call (pull: list + download)
                                              │
+┌───────────────────┐          ┌─────────────┴────────────┐ 
+│ Clients / LoadGen │─────────►│ Adapter API              │
+│ (triggers sync)   │  POST    │ - POST /sync             │
+└───────────────────┘  /sync   │ - store raw PDFs         │
+                               │ - emit document_available│
+                               └─────────────┬────────────┘
+                                             │  emits
+                                             │  work
+                                             │  items
+                                             ▼
+                               ┌──────────────────────────┐
+                               │ Ingestion Worker         │
+                               │ - validates raw_uri      │
+                               │ - emits extract_text     │
+                               └─────────────┬────────────┘
+                                             │
+                                             │
+                                             ▼
+                               ┌──────────────────────────┐          ┌───────────────────────────┐
+                               │ Extraction Workers       │  call    │ LLM Provider              │
+                               │ - text-first             │─────────►│ - schema extraction       │
+                               │ - PDF fallback, if needed│          │                           │
+                               └─────────────┬────────────┘          └───────────────────────────┘
+                                             │ emits
+                                             │ facts
                                              ▼
                                ┌──────────────────────────┐
                                │ Persistence Worker       │
-                               │ - upsert read models     │
-                               │ - attach provenance      │
+                               │ - upsert borrowers       │
+                               │   using facts            │
                                └─────────────┬────────────┘
-                                             │
+                                             │ call (read/write)
                                              ▼
                                ┌──────────────────────────┐
                                │ Postgres                 │
@@ -193,14 +199,14 @@ All application services (Adapter API, Query API, workers) are Node.js/TypeScrip
                                │ - applications           │
                                └─────────────┬────────────┘
                                              ▲
-                                             │
+                                             │ call (read)
                                ┌─────────────┴────────────┐
                                │ Query API                │
                                │ - search borrowers       │
                                │ - get by loan_number     │
                                └─────────────┬────────────┘
                                              ▲
-                                             │
+                                             │ get /borrowers
                                         ┌────┴────┐
                                         │ Clients │
                                         └─────────┘
