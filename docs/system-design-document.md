@@ -75,8 +75,8 @@ Given a corpus of heterogeneous **loan documents** (PDFs with varying formats), 
 
 ### 1.3 Non-goals
 
-- Perfect entity resolution across a massive population (this implementation uses a simplified borrower matching key).
-- Full KYC-grade address normalization (this implementation uses zip-based simplification; production uses a full address normalization service).
+- Perfect entity resolution across a massive population (this implementation uses name-based candidate lookup with SSN and address conflict detection; production would use stronger identifiers and full postal normalization).
+- Full KYC-grade address normalization (production would use a full address normalization service).
 - Sophisticated human-in-the-loop review tooling (we provide hooks / flags).
 
 ---
@@ -271,13 +271,13 @@ The Adapter is the only component that performs **pull** integrations. Downstrea
 The persistence stage turns an `ExtractionResult` into durable read models.
 
 1. **Borrower identity resolution + merge**
-   - Generate a **candidate set** using a coarse deterministic key (demo default):
-     - `borrower_key = sha256(normalize(full_name) + "|" + normalize(zip))`
+   - Generate a **candidate set** by **normalized full name** (same normalized name → candidates). Zip/address/SSN are not part of the lookup key; they are **match signals** in substructures used for conflict detection.
+   - **Strong-conflict logic:** If a candidate has the same name but a different SSN (no overlap) or incompatible high-proximity addresses, the system creates a new borrower; otherwise it merges into the first candidate without strong conflict. This avoids wrongly merging two different people while allowing one person with multiple addresses or documents.
    - Resolve matches and merge extracted facts using deterministic rules with:
      - **document-type–weighted confidence scoring** (to reduce systematic misattribution, e.g., employer address appearing as borrower address)
      - **strict income identity keys** to prevent collisions across representations (e.g., W-2 vs VOE vs paystub)
    - Detailed matching/merge semantics (including scoring, tie-breaking, and income identity) are specified in `docs/matching-and-merge-spec.md`.
-   - Note: ZIP-based keying is a simplification for this take-home. Production systems use full postal normalization plus stronger identifiers (SSN, loan/application IDs, verified account IDs).
+   - Production systems may use full postal normalization and stronger identifiers (SSN, loan/application IDs, verified account IDs) for candidate selection and conflict rules.
 
 2. **Application / party-group handling (multi-party)**
    - If a **loan number** is present in the extraction payload, upsert an **Application** entity keyed by `loan_number`.
@@ -286,7 +286,7 @@ The persistence stage turns an `ExtractionResult` into durable read models.
 
 3. **Transactional upsert (idempotent)**
    - In a single DB transaction:
-     - upsert `borrowers` (one per borrower_key)
+     - upsert `borrowers` (one per resolved borrower_id; resolution is name-based with conflict detection)
      - upsert `applications` (when loan number present)
      - upsert join rows `application_parties`
      - upsert `borrower_incomes` (keyed by `(borrower_id, income_identity_key, document_id)` where `income_identity_key` is derived from `(source_type, employer_key, period)`; see `docs/matching-and-merge-spec.md`)
@@ -314,7 +314,7 @@ The system persists normalized tables in Postgres and serves **read models** thr
 
 ### 4.1 BorrowerRecord (individual)
 
-Each **BorrowerRecord** represents a single person (borrower / co-borrower / other party). Borrowers are merged across documents using `borrower_key` (name + ZIP) and preserve evidence for extracted values.
+Each **BorrowerRecord** represents a single person (borrower / co-borrower / other party). Borrowers are merged across documents using **name-based candidate resolution** with SSN and address conflict detection; identity in the read model is **borrower_id** only. Evidence for extracted values is preserved per field.
 
 Conforms to: `docs/contracts/borrower_record.schema.json`.
 
@@ -322,10 +322,8 @@ Conforms to: `docs/contracts/borrower_record.schema.json`.
 {
   "schema_version": "1.1.0",
   "borrower_id": "11111111-1111-1111-1111-111111111111",
-  "borrower_key": "sha256(normalized_full_name|zip)",
   "status": "COMPLETE",
   "full_name": "John Homeowner",
-  "zip": "20013",
   "addresses": [
     {
       "type": "current",
@@ -758,7 +756,7 @@ This keeps the runtime surface area small while preserving debuggability.
 
 - PDF text extraction on representative fixtures (source files under `fixtures/`, golden outputs under `fixtures/expected/`)
 - schema validation + merge logic
-- borrower_key normalization and idempotent upsert behavior
+- borrower resolution (name-based candidates, SSN/address conflict detection) and idempotent upsert behavior
 
 ### 12.2 Integration/E2E tests
 
