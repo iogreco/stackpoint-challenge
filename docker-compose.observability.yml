@@ -53,6 +53,7 @@ services:
     profiles: ["load"]
     volumes:
       - ./observability/k6:/scripts:ro
+      - ./observability/k6/results:/scripts/results
     environment:
       - ADAPTER_API_URL=http://adapter-api:8080
     networks:

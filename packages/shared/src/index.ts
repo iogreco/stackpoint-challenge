@@ -61,6 +61,8 @@ export {
   dbQueryDurationHistogram,
   getMetrics,
   getMetricsContentType,
+  reportQueueMetrics,
+  serveMetrics,
 } from './metrics';
 
 // Schemas

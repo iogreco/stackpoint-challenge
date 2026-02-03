@@ -24,16 +24,18 @@ make test-e2e
 
 This runs black-box tests against an isolated compose stack with fresh volumes.
 
-### 0.3 Run load test with observability
+### 0.3 Run load test with observability *(planned)*
+
+Load testing with the current fixture dataset cannot generate meaningful load. When supported, the flow will be:
 
 ```bash
 make obs-setup
-Grafana: http://localhost:3004 (admin/admin)
+# Grafana: http://localhost:3004 (admin/admin)
 make obs-load
 make obs-cleanup
 ```
 
-The load test targets **adapter sync** and uses a small set of fixture PDFs repeatedly (no disk growth beyond a bounded object-store directory; see §6.3).
+The load test would target **adapter sync** and use a small set of fixture PDFs repeatedly (no disk growth beyond a bounded object-store directory; see §6.3).
 
 ---
 
@@ -285,6 +287,7 @@ The persistence stage turns an `ExtractionResult` into durable read models.
    - If a loan number is not present, no ApplicationRecord is created; the system still persists BorrowerRecords and their identifiers (e.g., account numbers).
 
 3. **Transactional upsert (idempotent)**
+   - **Per-borrower serialization:** The persistence worker takes a PostgreSQL advisory lock per **normalized borrower name** (`pg_advisory_xact_lock(hashtext(normalizedName))`) at transaction start. This serializes only jobs that touch the same person, avoiding duplicate borrower rows when multiple documents for the same borrower are processed concurrently; jobs for different borrowers run in parallel.
    - In a single DB transaction:
      - upsert `borrowers` (one per resolved borrower_id; resolution is name-based with conflict detection)
      - upsert `applications` (when loan number present)

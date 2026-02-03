@@ -47,3 +47,6 @@ tmp/
 # Prometheus/Grafana data
 prometheus_data/
 grafana_data/
+
+# k6 load test results
+observability/k6/results/

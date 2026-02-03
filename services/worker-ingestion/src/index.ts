@@ -12,6 +12,7 @@ import {
   runWithContextAsync,
   createWorker,
   createQueue,
+  serveMetrics,
   QUEUE_NAMES,
   type DocumentAvailableJob,
   type ExtractTextJob,
@@ -86,6 +87,9 @@ async function processDocumentAvailable(
     }
   );
 }
+
+// Expose /metrics for Prometheus
+serveMetrics(9091);
 
 // Create and start the worker
 const worker = createWorker<DocumentAvailableJob, void>(

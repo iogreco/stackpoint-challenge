@@ -13,6 +13,7 @@ import {
   runWithContextAsync,
   createWorker,
   createQueue,
+  serveMetrics,
   validateExtraction,
   QUEUE_NAMES,
   type ExtractTextJob,
@@ -229,6 +230,9 @@ async function processExtractText(job: Job<ExtractTextJob, void>): Promise<void>
     }
   );
 }
+
+// Expose /metrics for Prometheus
+serveMetrics(9091);
 
 // Create and start the worker
 const worker = createWorker<ExtractTextJob, void>(QUEUE_NAMES.EXTRACT_TEXT, processExtractText);

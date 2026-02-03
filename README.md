@@ -38,7 +38,7 @@ make health
 # Trigger a document sync
 make sync
 
-# List borrowers
+# Wait a few seconds for the pipeline to process documents, then list borrowers
 make borrowers
 ```
 
@@ -59,17 +59,6 @@ make borrowers
   ```
 
   Requires `OPENAI_API_KEY` in your environment; `make test-e2e` loads `.env` from the repo root if present, so a key in `.env` is enough.
-
-### Run load test with observability
-
-```bash
-make obs-setup
-# Grafana: http://localhost:3004 (admin/admin)
-make obs-load
-make obs-cleanup
-```
-
-The load test targets the Adapter sync endpoint using a small fixture corpus; raw PDFs are stored content-addressed so replays do not grow disk.
 
 ### Specification artifacts
 

@@ -10,6 +10,7 @@ import {
   config,
   runWithContextAsync,
   createWorker,
+  serveMetrics,
   QUEUE_NAMES,
   type PersistRecordsJob,
   type ExtractionResult,
@@ -113,6 +114,9 @@ async function processPersistRecords(job: Job<PersistRecordsJob, void>): Promise
     }
   );
 }
+
+// Expose /metrics for Prometheus
+serveMetrics(9091);
 
 // Create and start the worker
 const worker = createWorker<PersistRecordsJob, void>(

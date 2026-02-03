@@ -16,3 +16,23 @@ scrape_configs:
     static_configs:
       - targets: ['query-api:8081']
     metrics_path: /metrics
+
+  - job_name: 'worker-ingestion'
+    static_configs:
+      - targets: ['worker-ingestion:9091']
+    metrics_path: /metrics
+
+  - job_name: 'worker-text-extractor'
+    static_configs:
+      - targets: ['worker-text-extractor:9091']
+    metrics_path: /metrics
+
+  - job_name: 'worker-pdf-fallback'
+    static_configs:
+      - targets: ['worker-pdf-fallback:9091']
+    metrics_path: /metrics
+
+  - job_name: 'worker-persistence'
+    static_configs:
+      - targets: ['worker-persistence:9091']
+    metrics_path: /metrics

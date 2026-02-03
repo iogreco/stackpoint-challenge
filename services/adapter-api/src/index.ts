@@ -11,6 +11,7 @@ import {
   runWithContext,
   getMetrics,
   getMetricsContentType,
+  reportQueueMetrics,
   httpRequestDurationHistogram,
   httpRequestsCounter,
   backpressureRejectionsCounter,
@@ -18,18 +19,34 @@ import {
   checkBackpressure,
   QUEUE_NAMES,
   type DocumentAvailableJob,
+  type ExtractTextJob,
+  type ExtractPdfJob,
+  type PersistRecordsJob,
   type SyncRequest,
   type ErrorEnvelope,
 } from '@stackpoint/shared';
 import { syncDocuments } from './lib/sync';
 
+// Log uncaught errors so "docker compose logs adapter-api" shows the cause of exit(1)
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught exception', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled rejection', { reason, promise });
+  process.exit(1);
+});
+
 const app = express();
 const port = parseInt(process.env.PORT || '8080', 10);
 
-// Create the document_available queue
+// Create queues (document_available for sync; all four for metrics reporting)
 const documentAvailableQueue = createQueue<DocumentAvailableJob, void>(
   QUEUE_NAMES.DOCUMENT_AVAILABLE
 );
+const extractTextQueue = createQueue<ExtractTextJob, void>(QUEUE_NAMES.EXTRACT_TEXT);
+const extractPdfQueue = createQueue<ExtractPdfJob, void>(QUEUE_NAMES.EXTRACT_PDF);
+const persistRecordsQueue = createQueue<PersistRecordsJob, void>(QUEUE_NAMES.PERSIST_RECORDS);
 
 // Middleware
 app.use(express.json());
@@ -97,6 +114,12 @@ app.get('/health', async (req: Request, res: Response) => {
 
 // Metrics endpoint
 app.get('/metrics', async (req: Request, res: Response) => {
+  await reportQueueMetrics([
+    { name: QUEUE_NAMES.DOCUMENT_AVAILABLE, queue: documentAvailableQueue },
+    { name: QUEUE_NAMES.EXTRACT_TEXT, queue: extractTextQueue },
+    { name: QUEUE_NAMES.EXTRACT_PDF, queue: extractPdfQueue },
+    { name: QUEUE_NAMES.PERSIST_RECORDS, queue: persistRecordsQueue },
+  ]);
   res.setHeader('Content-Type', getMetricsContentType());
   res.send(await getMetrics());
 });
@@ -196,6 +219,9 @@ app.listen(port, () => {
 async function shutdown(signal: string) {
   logger.info(`${signal} received, shutting down`);
   await documentAvailableQueue.close();
+  await extractTextQueue.close();
+  await extractPdfQueue.close();
+  await persistRecordsQueue.close();
   process.exit(0);
 }
 
