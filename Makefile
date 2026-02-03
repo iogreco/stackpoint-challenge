@@ -33,13 +33,13 @@ test:
 
 # Run E2E tests (no OpenAI): pipeline health/sync only, isolated compose stack
 test-e2e-no-llm:
-	docker compose -f docker-compose.yml -f docker-compose.test.yml up -d
+	docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --wait
 	npm run test:e2e -- --testPathPattern="pipeline.e2e"
 	docker compose -f docker-compose.yml -f docker-compose.test.yml down
 
 # Run full E2E tests (including OpenAI extraction-quality). Requires OPENAI_API_KEY (in .env or exported).
 test-e2e:
-	docker compose -f docker-compose.yml -f docker-compose.test.yml up -d
+	docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --wait
 	@( [ -f .env ] && set -a && . ./.env && set +a; RUN_E2E_TESTS=1 npm run test:e2e )
 	docker compose -f docker-compose.yml -f docker-compose.test.yml down
 
