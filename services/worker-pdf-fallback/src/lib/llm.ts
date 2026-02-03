@@ -452,7 +452,7 @@ ${previousResultStr}`
         type: 'json_schema',
         json_schema: FACT_EXTRACTION_SCHEMA,
       },
-      max_tokens: 8192,
+      max_completion_tokens: 8192,
       temperature: 0,
     });
 
@@ -510,7 +510,21 @@ export async function extractWithVision(
   // STEP 1: Classify document type from PDF
   const classification = await classifyDocumentFromPdf(pdfPath, documentInfo);
 
-  // STEP 2: Extract with document-specific template
+  // STEP 2: Skip extraction for title_report (no useful facts to extract)
+  if (classification.document_type === 'title_report') {
+    logger.info('Skipping extraction for title_report (no borrower facts)', {
+      document_id: documentInfo.document_id,
+      document_type: classification.document_type,
+    });
+    return {
+      result: { facts: [], warnings: ['title_report: no borrower facts to extract'] },
+      requestId: `skip_${Date.now()}`,
+      model: 'skip',
+      classification,
+    };
+  }
+
+  // STEP 3: Extract with document-specific template
   const extraction = await extractWithVisionTemplate(
     pdfPath,
     documentInfo,
