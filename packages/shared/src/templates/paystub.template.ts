@@ -2,82 +2,93 @@
  * Paystub (Earnings Statement) Extraction Template
  *
  * Document semantics:
- * - Two distinct sections: EMPLOYER (header) and EMPLOYEE (body)
- * - Employee address appears in employee info section (extract this)
- * - Employer address appears in header (do NOT extract as borrower address)
- * - Income belongs to the employee
+ * - Extract: employee address, employer name, GROSS PAY only
+ * - Do NOT extract net pay, deductions, or YTD totals as separate income facts
+ * - Employer address is NOT the borrower's address
  */
 
 import type { ExtractionTemplate } from './types';
 
 export const PAYSTUB_TEMPLATE: ExtractionTemplate = {
   documentType: 'paystub',
-  description: 'Pay stub / earnings statement - extracts employee info, pay details, and employer name',
+  description: 'Pay stub - extracts employee address, employer name, and gross pay only',
 
   systemPrompt: `You are a document extraction specialist for paystubs (earnings statements).
 
-CRITICAL EXTRACTION RULE:
-Multiple facts of the same fact_type are expected. Do not stop after finding one. Extract ALL valid instances present in the document.
+WHAT TO EXTRACT (exactly these facts):
+1. address - Employee's home address (NOT employer address)
+2. employer_name - Company/employer name
+3. income - ONLY the GROSS PAY for the current pay period
 
-DOCUMENT STRUCTURE:
-Paystubs have TWO distinct sections:
-1. HEADER/EMPLOYER SECTION (top of document):
-   - Company/employer name
-   - Employer address (do NOT extract as borrower address)
-   - Company logo/letterhead
+CRITICAL - INCOME EXTRACTION:
+- Extract ONLY ONE income fact: the CURRENT PERIOD GROSS PAY
+- Do NOT extract net pay (after deductions)
+- Do NOT extract YTD totals as separate income facts
+- Do NOT extract multiple income facts from a single paystub
+- Look for "Gross Pay", "Gross Earnings", or "Total Earnings" for the pay period
 
-2. EMPLOYEE SECTION (body of document):
-   - Employee name
-   - Employee address (EXTRACT THIS as borrower address)
-   - Pay period dates
-   - Earnings breakdown (gross pay, deductions, net pay)
-   - YTD totals
+WHAT NOT TO EXTRACT:
+- Employer address (it's in the header, not the borrower's address)
+- Net pay / take-home pay
+- YTD amounts as separate facts
+- Deductions
 
-EXTRACTION RULES:
-1. Extract employee address from the EMPLOYEE SECTION ONLY
-2. CRITICAL: Do NOT extract ANY address from the employer/header section
-   - If you see an address in the HEADER near the company name, SKIP IT completely
-   - Only extract ONE address fact - the employee's address
-3. Extract employer_name from the header for income context
-4. Income facts belong to the employee
+VALUE OBJECT FORMAT:
+For address facts:
+{
+  "address": { "street1": "<street>", "street2": "", "city": "<city>", "state": "<ST>", "zip": "<zip>" },
+  "string_value": "",
+  "income": { "amount": 0, "currency": "USD", "frequency": "annual", "period": { "year": 1900, "start_date": "", "end_date": "" }, "employer": "", "source_type": "other" }
+}
 
-For each fact provide:
-- fact_type and value
-- evidence with document_id, source_filename, page_number, quote, evidence_source_context
-- names_in_proximity with correct proximity_score based on section
+For employer_name facts:
+{
+  "address": { "street1": "", "street2": "", "city": "", "state": "", "zip": "" },
+  "string_value": "<employer name>",
+  "income": { "amount": 0, "currency": "USD", "frequency": "annual", "period": { "year": 1900, "start_date": "", "end_date": "" }, "employer": "", "source_type": "other" }
+}
 
-evidence_source_context values for paystubs:
-- paystub_employee_info_block: Employee name/address section
-- paystub_header_employer_block: Employer name/address in header
-- paystub_ytd_rate_of_pay: Pay/earnings section
-- other: Other locations
+For income facts (GROSS PAY ONLY):
+{
+  "address": { "street1": "", "street2": "", "city": "", "state": "", "zip": "" },
+  "string_value": "",
+  "income": {
+    "amount": <gross pay amount>,
+    "currency": "USD",
+    "frequency": "<biweekly/weekly/monthly>",
+    "period": { "year": <4-digit year>, "start_date": "<YYYY-MM-DD>", "end_date": "<YYYY-MM-DD>" },
+    "employer": "<employer name>",
+    "source_type": "paystub"
+  }
+}
 
-proximity_score RULES for paystubs:
-- For facts from paystub_employee_info_block: employee name gets proximity_score: 3
-- For facts from paystub_header_employer_block: employee name gets proximity_score: 0
-- For income facts: employee name gets proximity_score: 2-3 depending on layout
+evidence_source_context values:
+- paystub_employee_info_block: Employee name/address
+- paystub_header_employer_block: Employer name
+- paystub_ytd_rate_of_pay: Gross pay
 
-CRITICAL: The employer address (from header) should have the employee with proximity_score: 0.
-The employee address should have the employee with proximity_score: 3.
+proximity_score:
+- Employee address: employee name with proximity_score: 3
+- Employer name: employee name with proximity_score: 0
+- Gross pay income: employee name with proximity_score: 3
 
-value object format: Always include address, string_value, and income. Fill only the relevant one based on fact_type; use empty/defaults for others.
-Data formats: Names "First Last", ZIP 5 or 9 digits, SSN XXX-XX-XXXX, dates YYYY-MM-DD, state 2-letter, currency USD.`,
+Data formats: Names "First Last", ZIP 5 or 9 digits, dates YYYY-MM-DD, state 2-letter, currency USD.`,
 
-  userPromptTemplate: `Extract facts from this paystub (earnings statement).
+  userPromptTemplate: `Extract employee address, employer name, and gross pay from this paystub.
 
 DOCUMENT METADATA (use these exact values in all evidence):
 - document_id: {{document_id}}
 - source_filename: {{source_filename}}
 
-IMPORTANT PAYSTUB RULES:
-- CRITICAL: Extract ONLY ONE address - the EMPLOYEE address (from employee info section)
-- NEVER extract the employer/company address (typically in header near company name) - SKIP IT
-- Employee name in SAME section as fact = proximity_score: 3
-- Employee name in DIFFERENT section from fact = proximity_score: 0
-- Extract employer_name (company name) but do NOT extract employer address
+EXTRACT EXACTLY:
+1. address - Employee's home address only (NOT employer address)
+2. employer_name - Company name
+3. income - ONLY the GROSS PAY for the current period (NOT net pay, NOT YTD)
+
+Return exactly 3 facts: one address, one employer_name, one income (gross pay).
 
 DOCUMENT TEXT BY PAGE:
 {{page_text}}
 
-Return a facts array. Each fact must have fact_type, value, evidence (at least one), and names_in_proximity with correct proximity scores.`,
+Return a facts array with exactly these 3 facts.`,
 };
